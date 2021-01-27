@@ -1,2 +1,2 @@
-# Stanford-STATS-315B
-Problem sets for STATS-315B (Winter/Tibshirani)
+# Stanford-STATS-315A
+Problem sets for STATS-315A (Winter/Tibshirani)
