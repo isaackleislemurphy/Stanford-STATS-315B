@@ -20,19 +20,6 @@ generate_data <- function(n=N, sigma=SIGMA, seed=11){
   list(x=x, y=y)
 }
 
-construct_quadratic_inverse <- function(mod){
-  #' Constructs f^{-1}(y), as instructed by the problem
-  #' @param stats::lm(): a fitted linear model.
-  #' @return function: a function to compute f^{-1}(y)
-  
-  # extract weights
-  beta = as.numeric(mod$coefficients)
-  inverse_func <- function(y){
-    c((-beta[2] + sqrt(beta[2]^2 - 4 * (beta[1] - y) * beta[3]))/(2 * beta[3]),
-      (-beta[2] - sqrt(beta[2]^2 - 4 * (beta[1] - y) * beta[3]))/(2 * beta[3]))
-  }
-  inverse_func
-}
 
 fit_and_solve <- function(x, y, yhat, domain=c(0, 1)){
   #' Fits the quadratic regression specified in the problem, and then predicts for a particular yhat
@@ -41,11 +28,16 @@ fit_and_solve <- function(x, y, yhat, domain=c(0, 1)){
   #' @param yhat: numeric[k], yhats to be predicted (in reverse), in accordance with the problem
   #' @param domain: numeric[2], the intended domain for xhat. Results outside this range will be ignored
   #' @return numeric : the predicted value of xhat
-
+  
+  # fit the model
   mod = lm(y ~ 1 + x + I(x^2))
-  inv_func <- construct_quadratic_inverse(mod)
-  result = eval(inv_func(yhat))
-  result[result >= domain[1] & result <= domain[2]]
+  # extract coefficients
+  beta = as.numeric(mod$coefficients)
+  # solve for roots
+  x0_hat = c((-beta[2] + sqrt(beta[2]^2 - 4 * (beta[1] - yhat) * beta[3]))/(2 * beta[3]),
+             (-beta[2] - sqrt(beta[2]^2 - 4 * (beta[1] - yhat) * beta[3]))/(2 * beta[3]))
+  # restrict root to appropriate range
+  x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]
 }
 
 # Part B ------------------------------------------------------------------
