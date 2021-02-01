@@ -1,0 +1,206 @@
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(mvtnorm))
+suppressMessages(library(class))
+
+PI = .5
+K = 8
+W = rep(1/8, K)
+SIGMA = .5 * diag(2)
+
+N_TRAIN = 300
+N_TEST = 20000
+
+
+# Part A ------------------------------------------------------------------
+
+# generate mu
+# get with key j + 1; then get row k by slicing
+set.seed(11)
+MU = list(
+  rmvnorm(8, c(0, 1), diag(2)),
+  rmvnorm(8, c(1, 0), diag(2))
+)
+
+
+# PART B ------------------------------------------------------------------
+
+generate_mixed_normals <- function(n, centroids=MU, omega=W, sigma2=SIGMA^2, pi=PI, seed=25){
+  #' Generates the density in 1a, pursuant to problem instructions
+  #' @param n: int, size of generated dataset
+  #' @param centroids: list[matrix[K, 2], matrix[K, 2]]. A list of the centroids
+  #' @param omega: numeric[K] mixing weights
+  #' @param sigma2: matrix[2, 2], var-cov matrix for MVN
+  #' @param pi: numeric, class priors
+  #' @param seed: integer, seed for reproducability
+  #' @return : list[matrix[n, 2], numeric[n]], a list of x, y values
+  
+  set.seed(seed)
+  pos_class = rbinom(n, 1, pi)
+  
+  # generate from positive class
+  set.seed(220)
+  pos_x = lapply(1:nrow(centroids[[2]]), 
+                 function(k) rmvnorm(sum(pos_class), 
+                                     centroids[[2]][k, ], 
+                                     sigma2) * omega[k]
+                 ) %>%
+    base::Reduce("+", .)
+  
+  neg_x = lapply(1:nrow(centroids[[1]]), 
+                 function(k) rmvnorm(length(pos_class) - sum(pos_class), 
+                                     centroids[[1]][k, ], 
+                                     sigma2) * omega[k]
+  ) %>%
+    base::Reduce("+", .)
+  
+  list(
+    x=rbind(neg_x, pos_x), 
+    y=c(rep(0, nrow(neg_x)), rep(1, nrow(pos_x)))
+  )
+}
+
+get_mixed_class_density <- function(x, mu, sigma=SIGMA^2, omega=W){
+  #' Gets the mixture/mixed density for a single class, i.e. j=0 OR j=1
+  #' @param x: matrix[n, 2], a matrix of x-values to take the density of
+  #' @param sigma: matrix[2, 2], variance-covariance matrix of distribution
+  #' @param omega: numeric[K], mixing weights
+  #' @return : numeric[n], conditional mixed densities for the class
+  
+  lapply(1:nrow(mu), 
+                   function(k) dmvnorm(x, 
+                                       mu[k, ], 
+                                       sigma) * omega[k]
+  ) %>%
+    base::Reduce("+", .)
+}
+
+compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, omega=W, pi=PI, decision_boundary=.5, response='prob'){
+  #' Computes the bayes classifier at a particular x
+  #' @param x: matrix[n, 2], a matrix of x-values to evaluate
+  #' @param centroids: list[matrix[K, 2], matrix[K, 2]]. A list of the centroids
+  #' @param omega: numeric[K] mixing weights
+  #' @param sigma: matrix[2, 2], var-cov matrix for MVN
+  #' @param pi: numeric, class priors
+  #' @param decision_boundary: numeric, cutoff for 1/0 classification
+  #' @return : numeric[nrow(x)], the Bayes classifications of each entry in x
+  
+  dens_pos = get_mixed_class_density(x, mu=centroids[[2]], sigma, omega)
+  dens_neg = get_mixed_class_density(x, mu=centroids[[1]], sigma, omega)
+  # doing it in full in case pi ever changes
+  if (response == 'prob'){
+    return(
+      (dens_pos*pi)/(dens_pos*pi + dens_neg*(1-pi))
+      )
+  }else{
+    return(
+      (dens_pos*pi)/(dens_pos*pi + dens_neg*(1-pi)) >= decision_boundary
+    )
+  }
+}
+
+fit_linear_classifier <- function(x, y){
+  #' Fits the linear classifier
+  #' @param x: matrix[n, 2], a matrix of features
+  #' @param y: numeric[n], a vector of binary y-values
+  #' @return : stats::lm(), a linear model
+  # R really wants it to be a df I guess
+  df = data.frame(x)
+  df$y = y
+  lm(y ~ ., df)
+}
+
+predict_linear_classifier <- function(mod, x, decision_boundary=.5){
+  #' Predicts for a fitted linear classifier
+  #' @param mod: stats::lm(), a fitted linear model
+  #' @param x: matrix[n, 2], a matrix of x-values to predict
+  #' @param decision_boundary: numeric, the 1/0 decision cutoff
+  #' @return : numeric, predicted y classes
+
+  yhat = predict(mod, newdata=data.frame(x))
+  as.numeric(yhat >= decision_boundary)
+}
+
+
+train_test_model_suite <- function(the_data, 
+                                   kvec=seq(1, 15, 2), 
+                                   params=list(
+                                     centroids=MU,
+                                     omega=W,
+                                     pi=PI,
+                                     sigma=SIGMA^2
+                                   )){
+  
+  bayes_test_class = compute_bayes_classifier(the_data$xtest, centroids=params$centroids, sigma=params$sigma, omega=params$omega, pi=params$pi,
+                                              response='class')
+  bayes_test_acc = sum(bayes_test_class == the_data$ytest)/length(bayes_test_class)
+  
+  clf_linear = fit_linear_classifier(the_data$xtrain, the_data$ytrain)
+  yhat_linear = predict_linear_classifier(clf_linear, the_data$xtest)
+  linear_test_acc = sum(yhat_linear == the_data$ytest)/length(the_data$ytest)
+  
+  # TODO: implement the KNN loop here
+
+}
+
+
+
+
+# the main portion
+
+trainset = generate_mixed_normals(n=N_TRAIN)
+xtrain = trainset$x; ytrain = trainset$y
+testset = generate_mixed_normals(n=N_TEST)
+xtest = testset$x; ytest = testset$y
+
+the_data = list(
+  xtrain=xtrain,
+  ytrain=ytrain,
+  xtest=xtest,
+  ytest=ytest
+)
+
+
+
+# Some basic plots/visualization ------------------------------------------
+
+x_grid = expand.grid(seq(-2, 2, .01), seq(-2, 2, .01))
+bayes_x_grid = compute_bayes_classifier(x_grid, centroids=MU, sigma=SIGMA^2, omega=W, pi=PI, response='class')
+x_grid = data.frame(x_grid) %>%
+  `colnames<-`(c("X1", "X2"))
+x_grid$y = bayes_x_grid
+
+
+ggplot(x_grid, aes(x=X1, y=X2, color=y), alpha=.01) + 
+  scale_fill_distiller(palette = "Spectral") +
+  geom_point(size=.5) +
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
+               `colnames<-`(c("X1", "X2", "y")) %>% 
+               filter(y==1), 
+             mapping=aes(x=X1, y=X2), alpha=.3, color = 'red')+
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
+               `colnames<-`(c("X1", "X2", "y")) %>% 
+               filter(y==0), 
+             mapping=aes(x=X1, y=X2), alpha=.3, color = 'green')
+  
+
+# the training data
+ggplot() +
+  geom_point(data = data.frame(cbind(the_data$xtrain, the_data$ytrain)) %>% `colnames<-`(c("X1", "X2", "y")), 
+             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
+  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'red') +
+  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+
+
+# the training data
+ggplot() +
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% `colnames<-`(c("X1", "X2", "y")), 
+             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
+  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'red') +
+  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+
+
