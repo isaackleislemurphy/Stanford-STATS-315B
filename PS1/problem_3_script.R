@@ -32,10 +32,13 @@ fit_and_solve <- function(x, y, yhat, domain=c(0, 1)){
   # fit the model
   mod = lm(y ~ 1 + x + I(x^2))
   # extract coefficients
-  beta = as.numeric(mod$coefficients)
+  beta_fit = as.numeric(mod$coefficients)
+  # cover the imaginary cases
+  sqrt_term = beta_fit[2]^2 - 4 * (beta_fit[1] - yhat) * beta_fit[3]
+  sqrt_term = max(sqrt_term, 0)
   # solve for roots
-  x0_hat = c((-beta[2] + sqrt(beta[2]^2 - 4 * (beta[1] - yhat) * beta[3]))/(2 * beta[3]),
-             (-beta[2] - sqrt(beta[2]^2 - 4 * (beta[1] - yhat) * beta[3]))/(2 * beta[3]))
+  x0_hat = c((-beta_fit[2] + sqrt(sqrt_term))/(2 * beta_fit[3]),
+             (-beta_fit[2] - sqrt(sqrt_term))/(2 * beta_fit[3]))
   # restrict root to appropriate range
   x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]
 }

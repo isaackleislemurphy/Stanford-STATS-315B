@@ -38,21 +38,16 @@ generate_mixed_normals <- function(n, centroids=MU, omega=W, sigma2=SIGMA^2, pi=
   set.seed(seed)
   pos_class = rbinom(n, 1, pi)
   
+  # sample from omega, THEN sample from MVN
   # generate from positive class
   set.seed(220)
-  pos_x = lapply(1:nrow(centroids[[2]]), 
-                 function(k) rmvnorm(sum(pos_class), 
-                                     centroids[[2]][k, ], 
-                                     sigma2) * omega[k]
-                 ) %>%
-    base::Reduce("+", .)
-  
-  neg_x = lapply(1:nrow(centroids[[1]]), 
-                 function(k) rmvnorm(length(pos_class) - sum(pos_class), 
-                                     centroids[[1]][k, ], 
-                                     sigma2) * omega[k]
-  ) %>%
-    base::Reduce("+", .)
+  pos_x = lapply(sample(1:length(omega), sum(pos_class), prob=omega, replace=T), 
+                 function(k) rmvnorm(1, centroids[[2]][k, ], sigma2)) %>%
+    do.call("rbind", .)
+  # generate from negative class
+  neg_x = lapply(sample(1:length(omega), length(pos_class) - sum(pos_class), prob=omega, replace=T), 
+                 function(k) rmvnorm(1, centroids[[1]][k, ], sigma2)) %>%
+    do.call("rbind", .)
   
   list(
     x=rbind(neg_x, pos_x), 
@@ -161,6 +156,9 @@ the_data = list(
 )
 
 
+mm = data.frame(the_data$xtest)
+mm$yhat = compute_bayes_classifier(mm, centroids=MU, sigma=SIGMA^2, omega=W, pi=PI, response='class')
+mm$y = the_data$ytest
 
 # Some basic plots/visualization ------------------------------------------
 
@@ -172,7 +170,6 @@ x_grid$y = bayes_x_grid
 
 
 ggplot(x_grid, aes(x=X1, y=X2, color=y), alpha=.01) + 
-  scale_fill_distiller(palette = "Spectral") +
   geom_point(size=.5) +
   geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
                `colnames<-`(c("X1", "X2", "y")) %>% 
