@@ -138,8 +138,7 @@ train_test_model_suite <- function(the_data,
   clf_linear = fit_linear_classifier(the_data$xtrain, the_data$ytrain)
   yhat_linear = predict_linear_classifier(clf_linear, the_data$xtest)
   linear_test_acc = mean(yhat_linear == the_data$ytest)
-  
-  acc_list = c(bayes_test_acc, linear_test_acc)
+  acc_list = c(bayes_test_acc, linear_test_acc) # list of accuracy measurements
   
   # KNN classifiers
   for (k in kvec) {
@@ -147,7 +146,6 @@ train_test_model_suite <- function(the_data,
     KNN_test_acc = mean(yhat_KNN == the_data$ytest)
     acc_list = c(acc_list, KNN_test_acc)
   }
-  
   return(acc_list)
 }
 
