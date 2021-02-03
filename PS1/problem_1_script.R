@@ -2,6 +2,7 @@ suppressMessages(library(dplyr))
 suppressMessages(library(ggplot2))
 suppressMessages(library(mvtnorm))
 suppressMessages(library(class))
+suppressMessages(library(rlist))
 
 PI = .5
 K = 8
@@ -10,7 +11,6 @@ SIGMA = .5 * diag(2)
 
 N_TRAIN = 300
 N_TEST = 20000
-
 
 # Part A ------------------------------------------------------------------
 
@@ -24,7 +24,6 @@ MU = list(
 
 
 # PART B ------------------------------------------------------------------
-
 generate_mixed_normals <- function(n, centroids=MU, omega=W, sigma2=SIGMA^2, pi=PI, seed=25){
   #' Generates the density in 1a, pursuant to problem instructions
   #' @param n: int, size of generated dataset
@@ -70,7 +69,8 @@ get_mixed_class_density <- function(x, mu, sigma=SIGMA^2, omega=W){
     base::Reduce("+", .)
 }
 
-compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, omega=W, pi=PI, decision_boundary=.5, response='prob'){
+# PART D ------------------------------------------------------------------
+compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, omega=W, pi=PI, decision_boundary=.5, response){
   #' Computes the bayes classifier at a particular x
   #' @param x: matrix[n, 2], a matrix of x-values to evaluate
   #' @param centroids: list[matrix[K, 2], matrix[K, 2]]. A list of the centroids
@@ -79,9 +79,10 @@ compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, omega=W, pi=PI
   #' @param pi: numeric, class priors
   #' @param decision_boundary: numeric, cutoff for 1/0 classification
   #' @return : numeric[nrow(x)], the Bayes classifications of each entry in x
-  
+
   dens_pos = get_mixed_class_density(x, mu=centroids[[2]], sigma, omega)
   dens_neg = get_mixed_class_density(x, mu=centroids[[1]], sigma, omega)
+  
   # doing it in full in case pi ever changes
   if (response == 'prob'){
     return(
@@ -94,6 +95,8 @@ compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, omega=W, pi=PI
   }
 }
 
+# PART E ------------------------------------------------------------------
+# linear classifier
 fit_linear_classifier <- function(x, y){
   #' Fits the linear classifier
   #' @param x: matrix[n, 2], a matrix of features
@@ -105,6 +108,7 @@ fit_linear_classifier <- function(x, y){
   lm(y ~ ., df)
 }
 
+# linear model prediction
 predict_linear_classifier <- function(mod, x, decision_boundary=.5){
   #' Predicts for a fitted linear classifier
   #' @param mod: stats::lm(), a fitted linear model
@@ -116,7 +120,7 @@ predict_linear_classifier <- function(mod, x, decision_boundary=.5){
   as.numeric(yhat >= decision_boundary)
 }
 
-
+# evaluation function
 train_test_model_suite <- function(the_data, 
                                    kvec=seq(1, 15, 2), 
                                    params=list(
@@ -125,24 +129,40 @@ train_test_model_suite <- function(the_data,
                                      pi=PI,
                                      sigma=SIGMA^2
                                    )){
-  
-  bayes_test_class = compute_bayes_classifier(the_data$xtest, centroids=params$centroids, sigma=params$sigma, omega=params$omega, pi=params$pi,
+  # Bayes classifier
+  bayes_test_class = compute_bayes_classifier(the_data$xtest[, c(1,2)], centroids=params$centroids, sigma=params$sigma, omega=params$omega, pi=params$pi,
                                               response='class')
-  bayes_test_acc = sum(bayes_test_class == the_data$ytest)/length(bayes_test_class)
+  bayes_test_acc = mean(bayes_test_class == the_data$ytest)
   
+  # Linear classifier
   clf_linear = fit_linear_classifier(the_data$xtrain, the_data$ytrain)
   yhat_linear = predict_linear_classifier(clf_linear, the_data$xtest)
-  linear_test_acc = sum(yhat_linear == the_data$ytest)/length(the_data$ytest)
+  linear_test_acc = mean(yhat_linear == the_data$ytest)
+  acc_list = c(bayes_test_acc, linear_test_acc) # list of accuracy measurements
   
-  # TODO: implement the KNN loop here
-
+  # KNN classifiers
+  for (k in kvec) {
+    yhat_KNN = knn(train=the_data$xtrain, test=the_data$xtest, cl=as.factor(the_data$ytrain), k=k, l=0, prob=FALSE, use.all=TRUE)
+    KNN_test_acc = mean(yhat_KNN == the_data$ytest)
+    acc_list = c(acc_list, KNN_test_acc)
+  }
+  return(acc_list)
 }
 
+# PART F ------------------------------------------------------------------
+# noisy wrapper around test suite
+noisy_evaluation <- function(kvec, the_data, noise, sigma.noise) {
+  # Add noise columns
+  xtrain.noise <- replicate(noise, rnorm(nrow(the_data$xtrain), mean=0, sd=sigma.noise))
+  xtest.noise <- replicate(noise, rnorm(nrow(the_data$xtest), mean=0, sd=sigma.noise))
+  the_data$xtrain <- cbind(the_data$xtrain, xtrain.noise)
+  the_data$xtest <- cbind(the_data$xtest, xtest.noise)
+  train_test_model_suite(the_data, kvec)
+}
 
+# main portion ------------------------------------------------------------
 
-
-# the main portion
-
+# PART C ------------------------------------------------------------------
 trainset = generate_mixed_normals(n=N_TRAIN)
 xtrain = trainset$x; ytrain = trainset$y
 testset = generate_mixed_normals(n=N_TEST)
@@ -155,10 +175,33 @@ the_data = list(
   ytest=ytest
 )
 
-
 mm = data.frame(the_data$xtest)
 mm$yhat = compute_bayes_classifier(mm, centroids=MU, sigma=SIGMA^2, omega=W, pi=PI, response='class')
 mm$y = the_data$ytest
+
+# PART E ------------------------------------------------------------------
+kvec = seq(1, 15, 2)
+train_test_model_suite(the_data, kvec)
+
+# PART F ------------------------------------------------------------------
+# adding noise parameters
+sigma.noise = 1
+noise.cols = 1:10
+
+noisy.result <- sapply(noise.cols, function(n_cols) {
+  return(noisy_evaluation(kvec, the_data, n_cols, sigma.noise))
+})
+
+# Plot the effects of adding the noise parameters on the accuracy
+res <- matrix(noisy.result, nrow=10)
+plot(t(res)[,1], type="l", xlab="# noise parameters", ylab="accuracy rate", ylim=c(0.5, 1.0))
+lines(t(res)[,2], col="red")
+for (i in 3:10) {
+  lines(t(res)[,i], col="blue")
+}
+legend("bottomleft", 
+       legend=c("Bayes", "Linear", "KNN"), 
+       fill=c("black", "red", "blue"))
 
 # Some basic plots/visualization ------------------------------------------
 
@@ -167,7 +210,6 @@ bayes_x_grid = compute_bayes_classifier(x_grid, centroids=MU, sigma=SIGMA^2, ome
 x_grid = data.frame(x_grid) %>%
   `colnames<-`(c("X1", "X2"))
 x_grid$y = bayes_x_grid
-
 
 ggplot(x_grid, aes(x=X1, y=X2, color=y), alpha=.01) + 
   geom_point(size=.5) +
@@ -191,7 +233,7 @@ ggplot() +
   geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
 
 
-# the training data
+# the test data
 ggplot() +
   geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% `colnames<-`(c("X1", "X2", "y")), 
              mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
