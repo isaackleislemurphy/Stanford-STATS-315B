@@ -1,4 +1,5 @@
 suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
 
 # Part A ------------------------------------------------------------------
 N = 50 # sample size
@@ -39,8 +40,13 @@ fit_and_solve <- function(x, y, yhat, domain=c(0, 1)){
   # solve for roots
   x0_hat = c((-beta_fit[2] + sqrt(sqrt_term))/(2 * beta_fit[3]),
              (-beta_fit[2] - sqrt(sqrt_term))/(2 * beta_fit[3]))
+  if (length(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]) == 2){
+    warning(paste0(length(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]), 
+                   " valid roots detected -- sampling one of them at random"))
+    return(sample(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]], 1))
+  }
   # restrict root to appropriate range
-  x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]
+  return(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]])
 }
 
 # Part B ------------------------------------------------------------------
