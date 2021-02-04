@@ -1,0 +1,455 @@
+---
+title: "Homework 1 (Coding Portion)"
+author: "Kai Okada (collaorators: Isaac Kleisle-Murphy, Muhammad Ahmed Chaudhry)"
+date: "2/3/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(mvtnorm))
+suppressMessages(library(class))
+suppressMessages(library(rlist))
+```
+Public GitHub link here: https://github.com/isaackleislemurphy/Stanford-STATS-315B/tree/main/PS1
+
+# Problem 1 - Comparing Bayes Classifier, Linear Regression, and KNN
+
+```{r init}
+# Initialize Member variables
+PI = .5
+K = 8
+W = rep(1/8, K)
+SIGMA = .5 * diag(2) # a matrix of standard deviations
+
+N_TRAIN = 300
+N_TEST = 20000
+
+```
+
+## Part (a) 
+We initialize 8 location vectors (means) in each class about (0, 1) and
+(1, 0), respectively.
+```{r partA}
+# generate mu
+# get with key j + 1; then get row k by slicing
+set.seed(11)
+MU = list(
+  rmvnorm(8, c(0, 1), diag(2)),
+  rmvnorm(8, c(1, 0), diag(2))
+)
+```
+
+## Part (b)
+We draw N points from the mixture of Gaussians defined for each class set in Part (a). First we draw the class from a binomial distibution with probability PI, and then based on the class, we sample from one of the K distributions with probability omega.
+```{r partB}
+generate_mixed_normals <- function(n, centroids=MU, omega=W, sigma2=SIGMA^2, pi=PI, seed=25)
+  {
+  #' Generates the density in 1a, pursuant to problem instructions
+  #' @param n: int, size of generated dataset
+  #' @param centroids: list[matrix[K, 2], matrix[K, 2]]. A list of the centroids
+  #' @param omega: numeric[K] mixing weights
+  #' @param sigma2: matrix[2, 2], var-cov matrix for MVN
+  #' @param pi: numeric, class priors
+  #' @param seed: integer, seed for reproducability
+  #' @return : list[matrix[n, 2], numeric[n]], a list of x, y values
+  
+  set.seed(seed)
+  pos_class = rbinom(n, 1, pi)
+  
+  # sample from omega, THEN sample from MVN
+  # generate from positive class
+  set.seed(220)
+  pos_x = lapply(sample(1:length(omega), sum(pos_class), prob=omega, replace=T), 
+                 function(k) rmvnorm(1, centroids[[2]][k, ], sigma2)) %>%
+    do.call("rbind", .)
+  # generate from negative class
+  neg_x = lapply(sample(1:length(omega), length(pos_class) - sum(pos_class), prob=omega, replace=T), 
+                 function(k) rmvnorm(1, centroids[[1]][k, ], sigma2)) %>%
+    do.call("rbind", .)
+  
+  list(
+    x=rbind(neg_x, pos_x), 
+    y=c(rep(0, nrow(neg_x)), rep(1, nrow(pos_x)))
+  )
+}
+
+get_mixed_class_density <- function(x, mu, sigma=SIGMA^2, omega=W){
+  #' Gets the mixture/mixed density for a single class, i.e. j=0 OR j=1
+  #' @param x: matrix[n, 2], a matrix of x-values to take the density of
+  #' @param sigma: matrix[2, 2], variance-covariance matrix of distribution
+  #' @param omega: numeric[K], mixing weights
+  #' @return : numeric[n], conditional mixed densities for the class
+  
+  lapply(1:nrow(mu), 
+                   function(k) dmvnorm(x, 
+                                       mu[k, ], 
+                                       sigma) * omega[k]
+  ) %>%
+    base::Reduce("+", .)
+}
+
+```
+
+## Part (c)
+Given the function, we generate a training set of size 300 and a test set of size 20000. Scatterplots are given below the code:
+
+```{r partC}
+trainset = generate_mixed_normals(n=N_TRAIN)
+xtrain = trainset$x; ytrain = trainset$y
+testset = generate_mixed_normals(n=N_TEST)
+xtest = testset$x; ytest = testset$y
+
+the_data = list(
+  xtrain=xtrain,
+  ytrain=ytrain,
+  xtest=xtest,
+  ytest=ytest
+)
+```
+
+Plot of Training Data:
+
+```{r, echo=FALSE}
+# the training data
+ggplot() +
+  geom_point(data = data.frame(cbind(the_data$xtrain, the_data$ytrain)) %>% `colnames<-`(c("X1", "X2", "y")), 
+             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
+  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), 
+             mapping=aes(x=X1, y=X2), 
+             size= 5, 
+             color = 'green') +
+  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), 
+             mapping=aes(x=X1, y=X2), 
+             size= 5, 
+             color = 'red') +
+  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+```
+
+Plot of Test Data:
+
+```{r, echo=FALSE}
+# the test data
+ggplot() +
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% `colnames<-`(c("X1", "X2", "y")), 
+             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
+  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'red') +
+  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
+  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+```
+
+## Part (d) 
+Below we have a Bayes classifier for our setup. We have generalized for the case where PI is not equal to 0.5.
+```{r partD}
+compute_bayes_classifier <- function(x, centroids, sigma=SIGMA^2, 
+                                     omega=W, pi=PI, decision_boundary=.5, response){
+  #' Computes the bayes classifier at a particular x
+  #' @param x: matrix[n, 2], a matrix of x-values to evaluate
+  #' @param centroids: list[matrix[K, 2], matrix[K, 2]]. A list of the centroids
+  #' @param omega: numeric[K] mixing weights
+  #' @param sigma: matrix[2, 2], var-cov matrix for MVN
+  #' @param pi: numeric, class priors
+  #' @param decision_boundary: numeric, cutoff for 1/0 classification
+  #' @return : numeric[nrow(x)], the Bayes classifications of each entry in x
+
+  dens_pos = get_mixed_class_density(x, mu=centroids[[2]], sigma, omega)
+  dens_neg = get_mixed_class_density(x, mu=centroids[[1]], sigma, omega)
+  
+  # doing it in full in case pi ever changes
+  if (response == 'prob'){
+    return(
+      (dens_pos*pi)/(dens_pos*pi + dens_neg*(1-pi))
+      )
+  }else{
+    return(
+      (dens_pos*pi)/(dens_pos*pi + dens_neg*(1-pi)) >= decision_boundary
+    )
+  }
+}
+
+mm = data.frame(the_data$xtest)
+mm$yhat = compute_bayes_classifier(mm, centroids=MU, sigma=SIGMA^2, 
+                                   omega=W, pi=PI, response='class')
+mm$y = the_data$ytest
+
+```
+
+A plot of the Bayes Decision Boundary alongside our test data:
+
+
+```{r, echo=FALSE}
+x_grid = expand.grid(seq(-2, 2, .01), seq(-2, 2, .01))
+bayes_x_grid = compute_bayes_classifier(x_grid, 
+                                        centroids=MU, 
+                                        sigma=SIGMA^2, 
+                                        omega=W, 
+                                        pi=PI, 
+                                        response='class')
+x_grid = data.frame(x_grid) %>%
+  `colnames<-`(c("X1", "X2"))
+x_grid$y = bayes_x_grid
+
+ggplot(x_grid, aes(x=X1, y=X2, color=y), alpha=.01) + 
+  geom_point(size=.5) +
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
+               `colnames<-`(c("X1", "X2", "y")) %>% 
+               filter(y==1), 
+             mapping=aes(x=X1, y=X2), alpha=.3, color = 'red')+
+  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
+               `colnames<-`(c("X1", "X2", "y")) %>% 
+               filter(y==0), 
+             mapping=aes(x=X1, y=X2), alpha=.3, color = 'green')
+```
+
+## Part (e) 
+Below we create a Linear model, a KNN model, and Evaluation Function that encorporates all 3 types of classifier. The evaluation suite returns the Bayes Accuracy (1 - Error), followed by the Linear Model Accuracy, and the accuracy of the KNN for each k given.
+```{r partE}
+# linear classifier
+fit_linear_classifier <- function(x, y){
+  #' Fits the linear classifier
+  #' @param x: matrix[n, 2], a matrix of features
+  #' @param y: numeric[n], a vector of binary y-values
+  #' @return : stats::lm(), a linear model
+  # R really wants it to be a df I guess
+  df = data.frame(x)
+  df$y = y
+  lm(y ~ ., df)
+}
+
+# linear model prediction
+predict_linear_classifier <- function(mod, x, decision_boundary=.5){
+  #' Predicts for a fitted linear classifier
+  #' @param mod: stats::lm(), a fitted linear model
+  #' @param x: matrix[n, 2], a matrix of x-values to predict
+  #' @param decision_boundary: numeric, the 1/0 decision cutoff
+  #' @return : numeric, predicted y classes
+
+  yhat = predict(mod, newdata=data.frame(x))
+  as.numeric(yhat >= decision_boundary)
+}
+
+# evaluation function
+train_test_model_suite <- function(the_data, 
+                                   kvec=seq(1, 15, 2), 
+                                   params=list(
+                                     centroids=MU,
+                                     omega=W,
+                                     pi=PI,
+                                     sigma=SIGMA^2
+                                   )){
+  # Bayes classifier
+  bayes_test_class = compute_bayes_classifier(the_data$xtest[, c(1,2)], 
+                                              centroids=params$centroids, 
+                                              sigma=params$sigma, 
+                                              omega=params$omega, 
+                                              pi=params$pi,
+                                              response='class')
+  bayes_test_acc = mean(bayes_test_class == the_data$ytest)
+  
+  # Linear classifier
+  clf_linear = fit_linear_classifier(the_data$xtrain, the_data$ytrain)
+  yhat_linear = predict_linear_classifier(clf_linear, the_data$xtest)
+  linear_test_acc = mean(yhat_linear == the_data$ytest)
+  acc_list = c(bayes_test_acc, linear_test_acc) # list of accuracy measurements
+  
+  # KNN classifiers
+  for (k in kvec) {
+    yhat_KNN = knn(train=the_data$xtrain, 
+                   test=the_data$xtest, 
+                   cl=as.factor(the_data$ytrain), 
+                   k=k, l=0, prob=FALSE, use.all=TRUE)
+    KNN_test_acc = mean(yhat_KNN == the_data$ytest)
+    acc_list = c(acc_list, KNN_test_acc)
+  }
+  return(acc_list)
+}
+
+kvec = seq(1, 15, 2)
+train_test_model_suite(the_data, kvec)
+```
+
+## Part (f)
+Now we have a wrapper function that generates test data given the number of standard Gaussian noise columns added in a sequence.
+
+```{r partF}
+noisy_evaluation <- function(kvec, the_data, noise, sigma.noise) {
+  #' Wrapper around test suite to add noise columns
+  xtrain.noise <- replicate(noise, rnorm(nrow(the_data$xtrain), mean=0, sd=sigma.noise))
+  xtest.noise <- replicate(noise, rnorm(nrow(the_data$xtest), mean=0, sd=sigma.noise))
+  the_data$xtrain <- cbind(the_data$xtrain, xtrain.noise)
+  the_data$xtest <- cbind(the_data$xtest, xtest.noise)
+  train_test_model_suite(the_data, kvec)
+}
+
+# main portion
+sigma.noise = 1
+noise.cols = 1:10
+
+noisy.result <- sapply(noise.cols, function(n_cols) {
+  return(noisy_evaluation(kvec, the_data, n_cols, sigma.noise))
+})
+
+```
+
+Below is a plot of the relative accuracy of each method based on number of noise columns added.
+
+```{r, echo=FALSE}
+# Plot the effects of adding the noise parameters on the accuracy
+res <- matrix(noisy.result, nrow=10)
+plot(t(res)[,1], type="l", xlab="# noise parameters", ylab="accuracy rate", ylim=c(0.5, 1.0))
+lines(t(res)[,2], col="red")
+for (i in 3:10) {
+  lines(t(res)[,i], col="blue")
+}
+legend("bottomleft", 
+       legend=c("Bayes", "Linear", "KNN"), 
+       fill=c("black", "red", "blue"))
+```
+
+The above plot illustrates that the KNN model can be improved from k=1 by increasing k and decreasing the model complexity, but all of the KNN classifiers suffer from worse performance when the number of noise parameters is increased. KNN can outperform Linear models when there are fewer noisy features, as it takes the nonlinear boundaries of our mixture data into account, but the Linear model has consistent performance as its complexity remains linear and it does not overfit to the noise.
+
+Below is a plot of the average performance of KNN as k is increased:
+
+```{r, echo=FALSE}
+# Plot the effects of adding the noise parameters on the accuracy
+plot(x=seq(1,15,2), y=res[3:10, 1], type="l", xlab="k", ylab="accuracy rate", ylim=c(0.5,1.0))
+for (i in 2:10) {
+  lines(seq(1,15,2), res[3:10, i])
+}
+```
+
+Across the different levels of noise, the performance seems to increase with higher k, however the gains past k=9 appear to be minimal.
+
+# Problem 3 - Bootstrap Simulation of an Inverse
+
+## Part (a) 
+Below is a function that estimates x_0 via Polynomial Regression. Note that since we are taking solutions to a quadratic equation, we need to be careful to avoid negative radicands and division by 0. We also need to restrict our attention to roots that are within the known domain of x, and choose the more likely quadratic root.
+```{r 2partA}
+# Part A ------------------------------------------------------------------
+N = 50 # sample size
+SIGMA = .2 # nuisance sd
+YHAT = 1.3 # point to evaluate
+S = 1000 # number of sims
+B = 10000 # number of bootstraps
+
+generate_data <- function(n=N, sigma=SIGMA, seed=11){
+  #' Function to sample an X ~ U(0, 1), and, on top of that x, compute  Y ~ N(1 + x^2, sigma^2)
+  #' @param n: int, sample size. 
+  #' @param sigma: numeric, standard deviation of epsilon
+  #' @param seed: int, sample seed for reproducability and/or recovery of "first" sample.
+  #' @return list[x=numeric, y=numeric]: A paired list of x, y
+  
+  set.seed(seed)
+  x = runif(n, 0, 1)
+  y = rnorm(n, 1 + x^2, sigma)
+  list(x=x, y=y)
+}
+
+
+fit_and_solve <- function(x, y, yhat, domain=c(0, 1)){
+  #' Fit quadratic regression specified in problem, then predicts for particular yhat
+  #' @param x: numeric[n], vector of (sampled) covariates of the regression.
+  #' @param y: numeric[n], vector of (sampled) targets of the regression.
+  #' @param yhat: numeric[k], yhats to be predicted (in reverse)
+  #' @param domain: numeric[2], intended domain for xhat. Results outside domain are ignored
+  #' @return numeric : the predicted value of xhat
+  
+  # fit the model
+  mod = lm(y ~ 1 + x + I(x^2))
+  # extract coefficients
+  beta_fit = as.numeric(mod$coefficients)
+  # cover the imaginary cases
+  sqrt_term = beta_fit[2]^2 - 4 * (beta_fit[1] - yhat) * beta_fit[3]
+  sqrt_term = max(sqrt_term, 0)
+  # solve for roots
+  x0_hat = c((-beta_fit[2] + sqrt(sqrt_term))/(2 * beta_fit[3]),
+             (-beta_fit[2] - sqrt(sqrt_term))/(2 * beta_fit[3]))
+  if (length(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]) == 2){
+    warning(paste0(length(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]]), 
+                   " valid roots detected -- sampling one of them at random"))
+    return(sample(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]], 1))
+  }
+  # restrict root to appropriate range
+  return(x0_hat[x0_hat >= domain[1] & x0_hat <= domain[2]])
+}
+
+```
+
+# Part (b)
+Here we generate a sample and generate a prediction of x_hat.
+
+```{r 2partB}
+data = generate_data()
+xhat_b = fit_and_solve(x=data$x, y=data$y, yhat=YHAT)
+```
+
+# Part (c)
+We sample S = 1000 realizations of x_hat from the model.
+```{r 2partC}
+xhats_c = sapply(1:S, function(i){
+  data = generate_data(seed=i+1); 
+  fit_and_solve(x=data$x, y=data$y, yhat=YHAT)
+})
+```
+
+# Part (d)
+We obtain 10000 bootstrap samples from the first sample only.
+```{r 2partD, warning=FALSE}
+xhats_d = sapply(1:B, function(i){
+  slc = sample(1:N, N, replace=T); # draw the sample
+  fit_and_solve(x=data$x[slc], y=data$y[slc], yhat=YHAT) # perform the procedure
+}) %>% 
+  unlist()
+```
+
+# Part (e)
+The standard deviations of the two methods are very similar, even though the bootstrap method relies on a small fraction of the data. As expected, the bias in the bootstrapped estimate is larger.
+```{r 2partE}
+sd_c = sd(xhats_c, na.rm=T)
+sd_d = sd(xhats_d, na.rm=T)
+ggplot(data.frame(xhat = c(xhats_c, xhats_d),
+                          method = c(rep("Simulated", length(xhats_c)),
+                                     rep("Bootstrapped", length(xhats_d))
+                          )),
+               aes(x=xhat,
+                   color=method)) +
+  geom_density() +
+  geom_vline(xintercept=sqrt(0.3)) +
+  xlim(c(.25, .75))
+paste("sd w/o bootstrap:", sd_c)
+paste("sd w/  bootstrap:", sd_d)
+paste("bias w/o bootstrap", abs(mean(xhats_c, na.rm=T) - sqrt(0.3)))
+paste("bias w/ bootstrap:", abs(mean(xhats_d, na.rm=T) - sqrt(0.3)))
+
+```
+
+# Part (f)
+We can compute the 90% confidence intervals in 2 ways:
+```{r 2partF}
+# method 1: straightaway:
+# 1.) take B bootstraps and compute quantiles (the middle 90% of sample statistics)
+ci_method_1 = quantile(xhats_d, c(.05, .95), na.rm=T) %>% suppressMessages()
+# re-use xhats
+
+# method 2: straightaway
+# 1.) Take the distribution as normal.
+# 2.) Compute the confidence interval according to a normal distribution
+ci_method_2 = qnorm(c(.05, .95), mean=mean(xhats_d), sd=sd(xhats_d))
+
+ggplot(data.frame(xhat = c(xhats_d), 
+                  method = rep("Bootstrapped", 
+                               length(xhats_d))),
+               aes(x=xhat,
+                   color=method)) +
+  geom_density() +
+  geom_vline(xintercept=ci_method_1) +
+  geom_vline(xintercept=ci_method_2, linetype="dotted") +
+  xlim(c(.4, .7)) 
+
+```
+
+The dotted lines represent the normal method and the straight lines represent the direct quantile method.
