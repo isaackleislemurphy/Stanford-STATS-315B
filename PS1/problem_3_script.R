@@ -69,7 +69,7 @@ xhats_d = sapply(1:B, function(i){
 
 sd_c = sd(xhats_c, na.rm=T)
 sd_d = sd(xhats_d, na.rm=T)
-plt_e = ggplot(data.frame(xhat = c(xhats_c, xhats_d),
+ggplot(data.frame(xhat = c(xhats_c, xhats_d),
                           method = c(rep("Simulated", length(xhats_c)),
                                      rep("Bootstrapped", length(xhats_d))
                           )),
@@ -87,9 +87,18 @@ ci_method_1 = quantile(xhats_d, c(.05, .95), na.rm=T) %>% suppressMessages()
 # re-use xhats
 
 # method 2: straightaway
-# 1.) take B bootstraps of size N, compute x0*
-# 2.) compute 5th and 95th percentile of x0* - avg(x0*)
-# 3.) (x0_sample - 5th percentile, x0_sample + 95th percentile)
-ci_method_2 = quantile(xhats_d - mean(xhats_d, na.rm=T), c(.05, .95), na.rm=T) %>%
-  as.numeric() +
-  xhat_b
+# 1.) Take the distribution of bootstrap statistics as normal.
+# 2.) Compute the confidence interval according to a normal distribution
+ci_method_2 = qnorm(c(.05, .95), mean=mean(xhats_d), sd=sd(xhats_d))
+
+# Plot the two methods (method 1 straight, method 2 dotted)
+ggplot(data.frame(xhat = c(xhats_d), 
+                  method = rep("Bootstrapped", 
+                               length(xhats_d))),
+       aes(x=xhat,
+           color=method)) +
+  geom_density() +
+  geom_vline(xintercept=ci_method_1) +
+  geom_vline(xintercept=ci_method_2, linetype="dotted") +
+  xlim(c(.4, .7)) 
+
