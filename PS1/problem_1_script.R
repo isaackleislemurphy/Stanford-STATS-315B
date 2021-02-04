@@ -205,41 +205,42 @@ legend("bottomleft",
 
 # Some basic plots/visualization ------------------------------------------
 
-x_grid = expand.grid(seq(-2, 2, .01), seq(-2, 2, .01))
-bayes_x_grid = compute_bayes_classifier(x_grid, centroids=MU, sigma=SIGMA^2, omega=W, pi=PI, response='class')
+x_grid = expand.grid(seq(-3, 3, .01), seq(-3, 3, .01))
+bayes_x_grid = compute_bayes_classifier(x_grid, centroids=MU, sigma=SIGMA^2, omega=W, pi=PI, response='class') %>% as.numeric()
 x_grid = data.frame(x_grid) %>%
   `colnames<-`(c("X1", "X2"))
 x_grid$y = bayes_x_grid
 
-ggplot(x_grid, aes(x=X1, y=X2, color=y), alpha=.01) + 
+ggplot(x_grid, aes(x=X1, y=X2, color=as.factor(y)), alpha=.01) + 
   geom_point(size=.5) +
-  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
-               `colnames<-`(c("X1", "X2", "y")) %>% 
-               filter(y==1), 
-             mapping=aes(x=X1, y=X2), alpha=.3, color = 'red')+
-  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% 
-               `colnames<-`(c("X1", "X2", "y")) %>% 
-               filter(y==0), 
-             mapping=aes(x=X1, y=X2), alpha=.3, color = 'green')
-  
+  scale_color_discrete(name='y') + 
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2), size= 5, colour='black') +
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2, color = as.factor(y)), size= 4) + 
+  labs(title = 'Bayes Decision Boundary', x='x1', y='x2', subtitle = 'Large points= centroids')
 
 # the training data
-ggplot() +
-  geom_point(data = data.frame(cbind(the_data$xtrain, the_data$ytrain)) %>% `colnames<-`(c("X1", "X2", "y")), 
-             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
-  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'green') +
-  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'red') +
-  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
-  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+ggplot(data.frame(cbind(the_data$xtrain, the_data$ytrain)) %>% `colnames<-`(c("x1", "x2", "y")),
+       aes(x=x1, y=x2, color=as.factor(y))) +
+  geom_point(alpha=.4) +
+  scale_color_discrete(name='y') + 
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2), size= 5, colour='black') +
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2, color = as.factor(y)), size= 4) + 
+  labs(title = 'Distribution of Training x1, x2, y', subtitle='Large points = centroids')
 
 
 # the test data
-ggplot() +
-  geom_point(data = data.frame(cbind(the_data$xtest, the_data$ytest)) %>% `colnames<-`(c("X1", "X2", "y")), 
-             mapping=aes(x=X1, y=X2, color=y), alpha=.3)+
-  geom_point(data = data.frame(MU[[1]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'green') +
-  geom_point(data = data.frame(MU[[2]]) %>% summarise_all(., mean), mapping=aes(x=X1, y=X2), size= 5, color = 'red') +
-  geom_point(data = data.frame(MU[[1]]), mapping=aes(x=X1, y=X2), size= 2, color = 'green') +
-  geom_point(data = data.frame(MU[[2]]), mapping=aes(x=X1, y=X2), size= 2, color = 'red')
+ggplot(data.frame(cbind(the_data$xtest, the_data$ytest)) %>% `colnames<-`(c("x1", "x2", "y")),
+       aes(x=x1, y=x2, color=as.factor(y))) +
+  geom_point(alpha=.4) +
+  scale_color_discrete(name='y') + 
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2), size= 5, colour='black') +
+  geom_point(data = bind_rows(data.frame(MU[[1]]) %>% mutate(y=0), data.frame(MU[[2]]) %>% mutate(y=1)),
+             mapping=aes(x=X1, y=X2, color = as.factor(y)), size= 4) + 
+  labs(title = 'Distribution of Test x1, x2, y', subtitle='Large points = centroids')
 
 
