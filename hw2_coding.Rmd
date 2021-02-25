@@ -1,0 +1,159 @@
+---
+title: "hw2_coding"
+author: "Muhammad Ahmed Chaudhry, Isaac Kleisle-Murphy, Kai Okada"
+date: "2/24/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(mvtnorm))
+suppressMessages(library(class))
+suppressMessages(library(rlist))
+library(tidyverse)
+library(magrittr)
+library(MASS)
+library(glmnet)
+library(nnet)
+```
+Public GitHub link here: https://github.com/isaackleislemurphy/Stanford-STATS-315B/tree/main/PS1
+
+# Problem 2 - Stepwise Linear Regression
+## Part (a)
+The intercept will change, but the other coefficients will not. As proof, we can see that we obtain predictions based on $\hat{y}_i = \hat{\beta}_0 + \sum_{j=1}^p x_ij \hat{\beta}_j$. With centering, we can rearrange this as:
+$\hat{y}_i = (\hat{\beta}_0 + \sum_{i=1}^p \mu_j \beta_j) + \sum_{j=1}^p (x_{ij} - \mu_j) \hat{\beta}_j$. Note that any values of $\hat{\beta}$ that could reduce the error further for the centered case would also reduce the error in the non-centered case. Therefore, the coefficient vector $\hat{\beta}$ remains consistent and the intercept shifts by the sum of the average for each feature multiplied by its coefficient.
+
+## Part (b) Determining Next Feature
+If we take the product $Z^Tr_s \in \mathbb{R}^{p-q}$, the elements of larger magnitude will correspond to features that are more highly correlated with the residuals, so adding them to the model will contribute most to fitting the model in the direction of the residuals, i.e. reducing error.
+
+## Part (c) Overall Strategy
+
+## Part (d) Forward Stepwise Regression in R
+
+## Part (e) Prediction on new Matrix
+
+## Part (f) Application to Spam Data
+
+## Part (g) Cross Validation
+
+## Part (h) Predictions on Test Data
+
+## Part (i) Plots of fit per step
+
+# Problem 7
+```{r prepr}
+# Read in and preprocess data
+zz_train = gzfile('zip.train.gz', 'rt')
+zz_test  = gzfile('zip.test.gz', 'rt')
+num_features = 256
+
+raw_train = as_tibble(read.csv(zz_train, header=F))
+raw_test = as_tibble(read.csv(zz_test,header=F))
+raw_train %>% separate(col = 1, sep = ' ', 
+                       into=as.character(c("digit", 1:num_features+1)), 
+                       convert = TRUE) -> dataset.train
+
+raw_test %>% separate(col = 1, sep = ' ',
+                      into = as.character(c("digit", 1:num_features+1)),
+                      convert = TRUE) -> dataset.test
+```
+
+## Part (i)
+```{r part_1}
+# Compare results of linear regression, LDA, and 
+# multiclass linear logistic regression
+
+# helper function to obtain class prediction from regression outputs
+lr_to_pred <- function(y) {round(min(max(y,0), 9))}
+
+# helper function to obtain error rate based on predicted vs. actual
+err_rate <- function(pred.y, test.y) {mean(pred.y != test.y)}
+
+# Linear Regression
+model.lr <- lm(digit ~ ., data = dataset.train)
+output.lr <- lapply(predict(model.lr, newdata = dataset.test[-1]), lr_to_pred)
+err_rate.lr <- err_rate(output.lr, dataset.test$digit)
+err_rate.lr # 74.5% test error
+
+# LDA
+model.lda <- lda(digit ~ ., data = dataset.train)
+output.lda <- predict(model.lda, newdata = dataset.test)$class
+err_rate.lda <- err_rate(output.lda, dataset.test$digit)
+err_rate.lda # 11.5% test error
+
+# Multiclass Logistic Regression
+model.mlr <- multinom(digit ~ ., data = dataset.train, MaxNWts = 4000, maxit=500)
+output.mlr <- predict(model.mlr, newdata = dataset.test[-1])
+err_rate.mlr <- err_rate(output.mlr, dataset.test$digit)
+err_rate.mlr # 16.6% test error
+```
+
+Linear Regression fares much worse than LDA and Logistic Regression, likely due to masking effects. LDA is ultimately the best classifier in the absence of shrinkage.
+
+## Part (ii)
+```{r part_2}
+# Helper function for obtaining predicted class from logistic regression
+f.extract_log <- function(x) { which.max(x) - 1}
+
+#' Get data frame of % deviance vs. test error from glmnet model
+#' @param train.x the training inputs as a matrix
+#' @param train.y the training outputs (list or matrix)
+#' @param test.x the test inputs as a matrix
+#' @param test.y the test outputs (list or matrix)
+#' @param alpha hyperparameter for L1 vs. L2 penalty
+#' @param family the (GLM) model family to fit 
+#' @param f.extract a function to extract predictions from the model
+#' @return a data frame of the % deviance vs. test error for each lambda
+glm_dev_vs_err <- function(train.x, train.y, test.x, test.y, 
+                           alpha, family, f.extract) {
+  fit <- glmnet(train.x, train.y, alpha = alpha, family = family)
+  
+  # apply model to the test data
+  result <- lapply(fit$lambda, 
+                   function(s) predict(fit, type = "response", 
+                                       newx = test.x, s = s))
+  # obtain predicted classes from results
+  ghats <- lapply(result, function(t) apply(t, MARGIN = 1, FUN = f.extract)) 
+  
+  # obtain error rates for each lambda
+  err_rates <- lapply(ghats, err_rate, test.y = test.y)
+  data.frame(dev = fit$dev.ratio, test_error = unlist(err_rates))
+}
+
+# adapt train and test data to glmnet
+train.y <- dataset.train[[1]]
+train.x <- as.matrix(dplyr::select(dataset.train, -c("digit")))
+test.y <- dataset.test[[1]]
+test.x <- as.matrix(dplyr::select(dataset.test, -c("digit")))
+```
+
+Plot for Linear Regression
+```{r linrplot}
+# Linear Regression
+dev_to_err.glmlin <- glm_dev_vs_err(train.x, train.y, test.x, test.y, 
+                                   0.3, "gaussian", lr_to_pred)
+ggplot(dev_to_err.glmlin, aes(x = dev, y = test_error)) + geom_line()
+
+```
+
+Plot for Multi-class Logistic Regression
+```{r logrplot}
+# Logistic Regression
+# Note: should y be a N x k response matrix? I think it's ok as
+dev_to_err.glmlog <- glm_dev_vs_err(train.x, train.y, test.x, test.y, 
+                                    0.3, "multinomial", f.extract_log)
+ggplot(dev_to_err.glmlog, aes(x = dev, y = test_error)) + geom_line()
+
+```
+
+## Part (iii)
+The optimization problem being solved in Linear Regression is:
+$\hat{\beta} = \text{argmin}_{\beta, \beta_0} [\sum_{i=1}^N (y_i - \beta_0 - x_i^T\beta)^2 + \lambda[(1-\alpha)||\beta||_2^2  + \alpha ||\beta||_1]]$
+
+The optimization problem being solved in Logistic Regression is:
+$\hat{\beta} = \text{argmax}_{\beta} [l(\beta) - \lambda [\frac{1}{2}(1 - \alpha)||\beta||_2^2 + \alpha||\beta||_1]]$, where $l(\beta)$ is the likelihood function:
+
+$l(\beta) = \sum_{i=1}^N(y_i \log p_i + (1 - y_i) \log (1 - p_i))$
+(TODO - this is incorrect for the multinomial case)
