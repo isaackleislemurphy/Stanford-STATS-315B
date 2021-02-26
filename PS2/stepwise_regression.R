@@ -96,10 +96,15 @@ stepwise.fit <- function(X, y, k=NULL){
   #' @return : lm_step. A fitted lm_step object.
   k = ifelse(is.null(k), ncol(X), k)
   lm_step = lm_step_construct(unname(as.matrix(X)), y)
-  init_beta = which.min(sapply(1:ncol(lm_step$X), function(ll) 
-    sum((lm_step$y - 
-           mean(lm_step$y) - 
-           as.numeric((t(lm_step$X[, ll]) %*% lm_step$y))/as.numeric(t(lm_step$X[, ll]) %*% lm_step$X[, ll]) * lm_step$X[, ll])^2)
+  init_beta = which.min(sapply(1:ncol(lm_step$X), function(ll){
+    yhat = mean(lm_step$y) + 
+      as.numeric((t(lm_step$X[, ll]) %*% lm_step$y))/as.numeric(t(lm_step$X[, ll]) %*% lm_step$X[, ll]) * lm_step$X[, ll];
+    rss = sum((lm_step$y - yhat)^2);
+    rss;
+  }
+    # sum((lm_step$y - 
+    #        mean(lm_step$y) - 
+    #        as.numeric((t(lm_step$X[, ll]) %*% lm_step$y))/as.numeric(t(lm_step$X[, ll]) %*% lm_step$X[, ll]) * lm_step$X[, ll])^2)
   ))
   lm_step = advance_qr(lm_step, init_beta)
   for (iter in 2:k){
@@ -127,6 +132,7 @@ stepwise.cv.fit <- function(X, y, nfolds=10, k=NULL, S=2020){
   set.seed(S)
   fold_idx = sample(1:nrow(X), nrow(X), replace=F)
   folds = split(fold_idx, ceiling(seq_along(fold_idx) / ceiling(length(fold_idx)/nfolds)))
+  assign("f", folds, envir = .GlobalEnv)
   cv_result = lapply(folds, function(fold){
     cat('-')
     X_train = X[setdiff(fold_idx, fold), ]; y_train = y[setdiff(fold_idx, fold)];
@@ -165,6 +171,35 @@ stepwise.cv.fit <- function(X, y, nfolds=10, k=NULL, S=2020){
   
 }
 
+empirical_stepwise <- function(X, y){
+  #' A sanity test for our function
+  intercept_only <- lm(y ~ 1, data=data.frame(X))
+  #define model with all predictors
+  all <- lm(y ~ ., data=data.frame(X))
+  #perform forward stepwise regression
+  forward <- step(intercept_only, direction='forward', scope=formula(all), trace=0)
+  forward
+}
+
+test_vs_empirical <- function(train_y, train_x_scaled){
+  suppressMessages(require(testit))
+  suppressMessages(require(stringr))
+  
+  full_fit = stepwise.fit(train_x_scaled, train_y)
+  emp_fit = empirical_stepwise(train_x_scaled[, 1:57], train_y)
+  beta_emp = as.numeric(coef(emp_fit))%>%.[2:length(.)]
+  
+  emp_cols_chosen = emp_fit$coefficients %>% names() %>% .[2:length(.)] %>% str_replace_all(., "X", "") %>% as.numeric()
+  fit_cols_chosen = full_fit$x_sel_idx[1:length(beta_emp)]
+  
+  identical_coefs_bool = mean(round(get_beta(full_fit, k=length(beta_emp)), 7) == round(beta_emp, 7)) == 1
+  identical_choices_bool = mean(emp_cols_chosen == fit_cols_chosen) == 1
+  
+  # tests
+  assert(identical_coefs_bool, T)
+  assert(identical_choices_bool, T)
+}
+
 
 main <- function(){
   source("stepwise_regression.R")
@@ -194,6 +229,17 @@ main <- function(){
   # note that CV automatically centers, so use unscaled here
   cv_results = stepwise.cv.fit(train_x_unscaled, train_y, nfolds=10, S=2020)
   full_fit = stepwise.fit(train_x_scaled, train_y)
+  
+  test_vs_empirical(train_y, train_x_scaled)
 }
 
+
+
+
+
+
+
+emp_fit = empirical_stepwise(train_x_scaled[, 1:57], train_y)
+beta_emp = as.numeric(coef(emp_fit))%>%.[2:length(.)]
+round(get_beta(full_fit, k=length(beta_emp)), 7) == round(beta_emp, 7)
 
