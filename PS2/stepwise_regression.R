@@ -123,7 +123,7 @@ stepwise.predict <- function(X, lm_step, k=NULL){
   }
 }
 
-stepwise.cv.fit(X, y, nfolds=10, k=NULL, S=2020){
+stepwise.cv.fit <- function(X, y, nfolds=10, k=NULL, S=2020){
   set.seed(S)
   fold_idx = sample(1:nrow(X), nrow(X), replace=F)
   folds = split(fold_idx, ceiling(seq_along(fold_idx) / ceiling(length(fold_idx)/nfolds)))
@@ -165,5 +165,35 @@ stepwise.cv.fit(X, y, nfolds=10, k=NULL, S=2020){
   
 }
 
+
+main <- function(){
+  source("stepwise_regression.R")
+  spam_data = read.csv("spamdata_indicated.csv")
+  spam_data[, 55:57] = log(spam_data[, 55:57])
+  
+  
+  train_x_unscaled = spam_data[spam_data[, 59] == 0, 1:57]; train_y = spam_data[spam_data[, 59] == 0, 58]
+  test_x_unscaled = spam_data[spam_data[, 59] == 1, 1:57]; test_y = spam_data[spam_data[, 59] == 1, 58]
+  
+  # centering
+  centers = train_x_unscaled %>%
+    colMeans() %>%
+    as.numeric()
+  
+  train_x_scaled = lapply(1:nrow(train_x_unscaled), function(i)
+    as.numeric(train_x_unscaled[i, 1:57]) - centers
+  ) %>%
+    do.call("rbind", .)
+  
+  test_x_scaled = lapply(1:nrow(test_x_unscaled), function(i)
+    as.numeric(test_x_unscaled[i, 1:57]) - centers
+  ) %>%
+    do.call("rbind", .)
+  
+  
+  # note that CV automatically centers, so use unscaled here
+  cv_results = stepwise.cv.fit(train_x_unscaled, train_y, nfolds=10, S=2020)
+  full_fit = stepwise.fit(train_x_scaled, train_y)
+}
 
 
