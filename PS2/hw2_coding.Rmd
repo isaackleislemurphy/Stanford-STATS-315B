@@ -1,5 +1,5 @@
 ---
-title: "hw2_coding"
+title: "Homework 2 (Coding Portion)"
 author: "Muhammad Ahmed Chaudhry, Isaac Kleisle-Murphy, Kai Okada"
 date: "2/24/2021"
 output: pdf_document
@@ -18,7 +18,7 @@ suppressMessages(library(glmnet))
 suppressMessages(library(nnet))
 suppressMessages(library(reshape2))
 ```
-Public GitHub link here: https://github.com/isaackleislemurphy/Stanford-STATS-315B/tree/main/PS1
+Public GitHub link here: https://github.com/isaackleislemurphy/Stanford-STATS-315B/tree/main/PS2
 
 # Problem 2 - Stepwise Linear Regression
 ## Part (a)
@@ -29,9 +29,22 @@ $\hat{y}_i = (\hat{\beta}_0 + \sum_{i=1}^p \mu_j \hat{\beta}_j) + \sum_{j=1}^p (
 If we take the product $Z^Tr_s \in \mathbb{R}^{p-q}$, the elements of larger magnitude will correspond to features that are more highly correlated with the residuals, so adding them to the model will contribute most to fitting the model in the direction of the residuals, i.e. reducing error.
 
 ## Part (c) Overall Strategy
+At a high-level, our plan to perform forward stepwise regression breaks down as follows:\newline
+0.) Mean-center the features. This saves us intercept recalculations down the road, as no matter how many (mean-centered) features we add, this will remain the intercept. \newline
+1.) Initialise the "null" model to be the mean of the y. This mean, by the centering in 0.), will remain the intercept hereafter. \newline
+2.) Scan the remaining p features; for each, compute a univariate regression, and the univariate regression that maximizes $||(y - \bar{y}||_2^2 - RSS_{uv}$ most is the first feature included. \newline
+3.) Once this feature has been selected, and it's (univariate) coefficient saved, initialise a QR factorization process (i.e. a running Graham-Schmidt algorithm) with this first feature as the "jumping off point". \newline
+4.) Scan the remaining $p-1$ features. For each feature, temporarily add it to the running Graham-Schmidt/QR decomposition. Then use the triangular structure of the QR decomposition to efficiently solve for the temporary/proposed coefficients of the next step.  \newline
+5.) Evaluate the drops in RSS's of all the "temporary" Graham-Schmidt advancements (these are cheap -- they just build off of the previous "permanent"/selected features); retain that which results in the largest drop permanently. \newline
+6.) Repeat 4-5 until all features have been used up.  \newline
+7.) Now, Q is an $n \times p$ orthogonal matrix, and R is a $p\times p$ upper triangular matrix. If we wish to retrieve coefficients retroactive to a particular step number, we need only to backsolve via Q[1:step, 1:step], R[1:step, 1:step]. In this way, the QR/G-S decomposition allows us to preserve previous iterations of the model, for ease of comparison.  \newline
 
 ## Part (d) Forward Stepwise Regression in R
 ```{r stepwise-fit}
+classify <- function(y_hats) {
+  sapply(y_hats, function(y) ifelse(y >= .5, 1, 0));
+}
+
 lm_step_construct <- function(X, y){
   #' Constructor function for lm_step object
   #' @param X: matrix. A matrix of features to train on.
@@ -52,6 +65,7 @@ lm_step_construct <- function(X, y){
     beta_step=matrix(rep(0, ncol(X)^2), ncol=ncol(X)), # log of betas
     r2_step=c(), # r-squared at each step
     rss_step=c(), # rss at each step
+    misclass_step=c(), # misclassification error at each step
     tss =sum(sapply(y, function(y_i) (y_i - mean(y))^2)),
     # is_fit=F, # for checks
     j=1 # current predictor number
@@ -119,12 +133,17 @@ advance_selection <- function(lm_step){
   if (length(beta_current) == 1){
     rss_current = sum((lm_step$y - mean(lm_step$y) - 
                          lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current)^2)
+    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
+                                                    lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current))
   }else{
     rss_current = sum((lm_step$y - mean(lm_step$y) -
                          lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current)^2)
+    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
+                                                    lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current))
   }
   lm_step$rss_step = append(lm_step$rss_step, rss_current)
   lm_step$r2_step = append(lm_step$r2_step, 1 - rss_current / lm_step$tss)
+  lm_step$misclass_step = append(lm_step$misclass_step, misclass_current)
   
   candidates = lapply(lm_step$X_nonsel_idx, function(ll){
     lm_step_cand = advance_qr(lm_step, ll);
@@ -214,7 +233,7 @@ prediction.score <- function(model, X_eval, y_eval) {
     #' @return : data.frame. The RSS, MSE, and Misclassification error for each partial model
     scoring = lapply(1:length(model$x_sel_idx), function(z){
     yhat = stepwise.predict(X_eval, model, k=z);
-    yhat_binary = sapply(yhat, function(y) ifelse(y >= .5, 1, 0));
+    yhat_binary = classify(yhat)
     
     rss = sum((y_eval - yhat)^2);
     mse = mean((y_eval - yhat)^2);
@@ -232,7 +251,7 @@ prediction.score <- function(model, X_eval, y_eval) {
 
 ## Part (f) Application to Spam Data
 ```{r fit-data}
-spam_data = read.csv("spamdata_indicated.csv")
+spam_data = read.csv("spamdata_indicated.csv", header = FALSE)
 spam_data[, 55:57] = log(spam_data[, 55:57])
   
 train_x_unscaled = spam_data[spam_data[, 59] == 0, 1:57]; 
@@ -258,6 +277,23 @@ test_x_scaled = lapply(1:nrow(test_x_unscaled), function(i)
 # fit the full model
 k = ncol(train_x_scaled)
 full_model = stepwise.fit(train_x_scaled, train_y, k = k)
+rss_df <- data.frame(step = 1:(k-1), rss = full_model$rss_step) # rss
+mce_df <- data.frame(step = 1:(k-1), mce = full_model$misclass_step) # misclassification
+```
+
+```{r plot-train-rss}
+# plot rss during the selection process
+ggplot(rss_df, aes(x = step, y = rss)) + 
+  geom_point() +
+  geom_point(aes(x = 0, y = sum((train_y - mean(train_y))^2 )))
+  
+```
+
+```{r plot-train-misclass}
+# plot misclassification during the selection process
+ggplot(mce_df, aes(x = step, y = mce)) + 
+  geom_point() +
+  geom_point(aes(x = 0, y = mean(train_y != round(mean(train_y)) )))
 
 ```
 
@@ -314,10 +350,13 @@ cv_results = stepwise.cv.fit(train_x_unscaled, train_y, nfolds=10, S=2020)
 k_cv= which.min(cv_results$MISCLASS)
 k_cv
 ```
+We took the number of steps that produced the minimum misclassification error from cross-validation, but the misclassification appears to level off much earlier. In a practical setting, we would consider using some kind of threshold or the one-standard-error rule to obtain the simplest model within an appropriate range. However, this does not seem to be a problem for the test data in part (h) below.
 
 ```{r misclass-plot}
 # plot misclassification error as a function of step in CV. 
-ggplot(cv_results, aes(x = nfeat, y = MISCLASS)) + geom_point()
+ggplot(cv_results, aes(x = nfeat, y = MISCLASS)) + 
+  geom_point() +
+  geom_point(aes(x = 0, y = mean(train_y != round(mean(train_y)))))
 ```
 
 ## Part (h) Predictions on Test Data
@@ -326,8 +365,9 @@ ggplot(cv_results, aes(x = nfeat, y = MISCLASS)) + geom_point()
 full_model = stepwise.fit(train_x_scaled, train_y)
 test_results <- prediction.score(full_model, test_x_scaled, test_y)
 ggplot(test_results, aes(x = nfeat, y = MISCLASS)) + 
-  geom_line() +
-  geom_vline(xintercept=k_cv, linetype="dotted") 
+  geom_point() +
+  geom_vline(xintercept=k_cv, linetype="dotted")  + 
+  geom_point(aes(x =0, y = mean(test_y != round(mean(test_y))))) # add step 0
 ```
 The vertical line corresponds the number of steps selected by CV.
 
@@ -352,13 +392,15 @@ betas_dfR2 <- melt(subset(betas_df, select=-c(step)) ,
 ggplot(betas_dfStep, aes(x = step, y = coef, group_by(beta))) + 
   geom_path(aes(colour = beta), show.legend=FALSE) +
   xlim(c(0,k+1)) + 
-  geom_vline(xintercept=k_cv, linetype="dotted") 
+  geom_vline(xintercept=k_cv, linetype="dotted") +
+  geom_hline(yintercept=mean(train_y)) # add beta_0
 ```
 
 ```{r plot2}
 ggplot(betas_dfR2, aes(x = r2, y = coef, group_by(beta))) + 
   geom_path(aes(colour = beta), show.legend=FALSE) +
-  geom_vline(xintercept=betas_df$r2[k_cv], linetype="dotted") 
+  geom_vline(xintercept=betas_df$r2[k_cv], linetype="dotted") +
+  geom_hline(yintercept=mean(train_y)) # add beta_0
 ```
 
 ```{r first10tbl}
@@ -370,6 +412,7 @@ first_ten.coefs <- sapply(1:10, function(i) {
 # show table for clarity
 data.frame(feature = first_ten.feats, coef1 = first_ten.coefs)
 ```
+We observe that the coefficients do not change sign after entering the model, and that the magnitude of each coefficient tends to decrease as more features are added. We also notice that entering the model at a later step does not preclude the variables from having large coefficient magnitudes - this may just be due to the scale of the particular variable. 
 
 # Problem 7
 Preprocessing
@@ -396,16 +439,19 @@ raw_test %>% separate(col = 1, sep = ' ',
 lr_to_pred <- function(y) {round(min(max(y,0), 9))}
 # helper function to obtain error rate based on predicted vs. actual
 err_rate <- function(pred.y, test.y) {mean(pred.y != test.y)}
+
 # Linear Regression
 model.lr <- lm(digit ~ ., data = dataset.train)
 output.lr <- lapply(predict(model.lr, newdata = dataset.test[-1]), lr_to_pred)
 err_rate.lr <- err_rate(output.lr, dataset.test$digit)
 err_rate.lr # 74.5% test error
+
 # LDA
 model.lda <- lda(digit ~ ., data = dataset.train)
 output.lda <- predict(model.lda, newdata = dataset.test)$class
 err_rate.lda <- err_rate(output.lda, dataset.test$digit)
 err_rate.lda # 11.5% test error
+
 # Multiclass Logistic Regression
 model.mlr <- multinom(digit ~ ., data = dataset.train, MaxNWts = 4000, maxit=500)
 output.mlr <- predict(model.mlr, newdata = dataset.test[-1])
@@ -419,17 +465,18 @@ Linear Regression fares much worse than LDA and Logistic Regression, likely due 
 ```{r part_2}
 # Helper function for obtaining predicted class from logistic regression
 f.extract_mlm <- function(x) { which.max(x) - 1}
-#' Get data frame of % deviance vs. test error from glmnet model
-#' @param train.x the training inputs as a matrix
-#' @param train.y the training outputs (list or matrix)
-#' @param test.x the test inputs as a matrix
-#' @param test.y the test outputs (list or matrix)
-#' @param alpha hyperparameter for L1 vs. L2 penalty
-#' @param family the (GLM) model family to fit 
-#' @param f.extract a function to extract predictions from the model
-#' @return a data frame of the % deviance vs. test error for each lambda
+
 glm_dev_vs_err <- function(train.x, train.y, test.x, test.y, 
                            alpha, family, f.extract) {
+  #' Get data frame of % deviance vs. test error from glmnet model
+  #' @param train.x the training inputs as a matrix
+  #' @param train.y the training outputs (list or matrix)
+  #' @param test.x the test inputs as a matrix
+  #' @param test.y the test outputs (list or matrix)
+  #' @param alpha hyperparameter for L1 vs. L2 penalty
+  #' @param family the (GLM) model family to fit 
+  #' @param f.extract a function to extract predictions from the model
+  #' @return a data frame of the % deviance vs. test error for each lambda
   train_coded.y <- model.matrix(~ as.factor(train.y) + 0)
   fit <- glmnet(train.x, train_coded.y, alpha = alpha, family = family)
   
