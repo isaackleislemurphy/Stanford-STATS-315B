@@ -6,6 +6,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
+source("stepwise_regression.R")
 knitr::opts_chunk$set(echo = TRUE)
 suppressMessages(library(dplyr))
 suppressMessages(library(ggplot2))
@@ -35,6 +36,10 @@ If we take the product $Z^Tr_s \in \mathbb{R}^{p-q}$, the elements of larger mag
 ## Part (e) Prediction on new Matrix
 
 ## Part (f) Application to Spam Data
+```{r}
+
+```
+
 
 ## Part (g) Cross Validation
 
