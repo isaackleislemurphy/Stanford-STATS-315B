@@ -116,7 +116,31 @@ get_beta <- function(lm_step, k=NULL){
   k = ifelse(is.null(k), lm_step$j-1, k)
   Q = lm_step$Q[, 1:k]; R = lm_step$R[1:k, 1:k]
   backsolve(R, crossprod(Q, y)) %>%
-    as.numeric()
+    as.numeric() -> beta_current
+  
+  beta_current
+}
+
+# helper function to update lm_step with new fit
+log_intermediates <- function(lm_step, beta_current) {
+   
+  lm_step$beta_step[lm_step$j-1,lm_step$x_sel_idx] = beta_current
+  
+  if (length(beta_current) == 1){
+    rss_current = sum((lm_step$y - mean(lm_step$y) - 
+                         lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current)^2)
+    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
+                                                  lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current))
+  }else{
+    rss_current = sum((lm_step$y - mean(lm_step$y) -
+                         lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current)^2)
+    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
+                                                    lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current))
+  }
+  lm_step$rss_step = append(lm_step$rss_step, rss_current)
+  lm_step$r2_step = append(lm_step$r2_step, 1 - rss_current / lm_step$tss)
+  lm_step$misclass_step = append(lm_step$misclass_step, misclass_current)
+  lm_step
 }
 
 advance_selection <- function(lm_step){
@@ -128,30 +152,23 @@ advance_selection <- function(lm_step){
   
   beta_current = get_beta(lm_step);
   #beta_compare = coef(lm(lm_step$y ~ lm_step$X_sel[, 1:(lm_step$j-1)])) compare results to lm
-  lm_step$beta_step[lm_step$j-1,lm_step$x_sel_idx] = beta_current;
   
   if (length(beta_current) == 1){
     rss_current = sum((lm_step$y - mean(lm_step$y) - 
                          lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current)^2)
-    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
-                                                    lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current))
   }else{
     rss_current = sum((lm_step$y - mean(lm_step$y) -
                          lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current)^2)
-    misclass_current = mean(lm_step$y != classify(mean(lm_step$y) + 
-                                                    lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current))
   }
-  lm_step$rss_step = append(lm_step$rss_step, rss_current)
-  lm_step$r2_step = append(lm_step$r2_step, 1 - rss_current / lm_step$tss)
-  lm_step$misclass_step = append(lm_step$misclass_step, misclass_current)
   
   candidates = lapply(lm_step$X_nonsel_idx, function(ll){
     lm_step_cand = advance_qr(lm_step, ll);
     beta_cand = get_beta(lm_step_cand);
     rss_delta = rss_current - sum((lm_step_cand$y - mean(lm_step_cand$y) -
                                      lm_step_cand$X_sel[, 1:(lm_step_cand$j-1)] %*% beta_cand)^2);
-    list(lm_step_cand, rss_delta);
+    list(lm_step_cand, rss_delta, beta_cand);
   })
+  
   candidates[[which.max(sapply(candidates, function(x) x[[2]]))]][[1]]
 }
 
@@ -171,8 +188,12 @@ stepwise.fit <- function(X, y, k=NULL){
                                                   lm_step$X[, ll]) * lm_step$X[, ll])^2)
   ))
   lm_step = advance_qr(lm_step, init_beta)
+  beta_current = get_beta(lm_step)
+  lm_step = log_intermediates(lm_step, beta_current)
   for (iter in 2:k){
     lm_step = advance_selection(lm_step)
+    beta_current = get_beta(lm_step)
+    lm_step = log_intermediates(lm_step, beta_current)
   }
   lm_step
 }
@@ -219,8 +240,8 @@ coef.matrix <- function(model, k) {
   #' @return : data.frame[k, k+2] of coefficient sets for model
   
   betas_df <- data.frame(model$beta_step)
-  betas_df <- betas_df[1:(k-1), colSums(betas_df, dims = 1L) != 0]
-  betas_df$step <- 1:(k-1)
+  betas_df <- betas_df[1:k, colSums(betas_df, dims = 1L) != 0]
+  betas_df$step <- 1:k
   betas_df$r2 <- overall_results$r2_step
   betas_df
 }
@@ -277,8 +298,8 @@ test_x_scaled = lapply(1:nrow(test_x_unscaled), function(i)
 # fit the full model
 k = ncol(train_x_scaled)
 full_model = stepwise.fit(train_x_scaled, train_y, k = k)
-rss_df <- data.frame(step = 1:(k-1), rss = full_model$rss_step) # rss
-mce_df <- data.frame(step = 1:(k-1), mce = full_model$misclass_step) # misclassification
+rss_df <- data.frame(step = 1:k, rss = full_model$rss_step) # rss
+mce_df <- data.frame(step = 1:k, mce = full_model$misclass_step) # misclassification
 ```
 
 ```{r plot-train-rss}
