@@ -1,0 +1,488 @@
+---
+title: "hw2_coding"
+author: "Muhammad Ahmed Chaudhry, Isaac Kleisle-Murphy, Kai Okada"
+date: "2/24/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(class))
+suppressMessages(library(rlist))
+suppressMessages(library(tidyverse))
+suppressMessages(library(magrittr))
+suppressMessages(library(MASS))
+suppressMessages(library(glmnet))
+suppressMessages(library(nnet))
+suppressMessages(library(reshape2))
+```
+Public GitHub link here: https://github.com/isaackleislemurphy/Stanford-STATS-315B/tree/main/PS1
+
+# Problem 2 - Stepwise Linear Regression
+## Part (a)
+The fitted intercept if $\mathbf{X}$ is mean-centered is $\frac{1}{N}\sum_{i=1}^N y_i$. When we mean-center the columns of $X$, this intercept will change, but the other coefficients will not. As proof, we can see that we originally obtain predictions based on $\hat{y}_i = \hat{\beta}_0 + \sum_{j=1}^p x_ij \hat{\beta}_j$. With centering, we can rearrange this as:
+$\hat{y}_i = (\hat{\beta}_0 + \sum_{i=1}^p \mu_j \hat{\beta}_j) + \sum_{j=1}^p (x_{ij} - \mu_j) \hat{\beta}_j$. Note that any values of $\hat{\beta}$ that could reduce the error further for the centered case would also reduce the error in the non-centered case. Therefore, the coefficient vector $\hat{\beta}$ remains consistent and the intercept shifts by the sum of the average for each feature multiplied by its coefficient.
+
+## Part (b) Determining Next Feature
+If we take the product $Z^Tr_s \in \mathbb{R}^{p-q}$, the elements of larger magnitude will correspond to features that are more highly correlated with the residuals, so adding them to the model will contribute most to fitting the model in the direction of the residuals, i.e. reducing error.
+
+## Part (c) Overall Strategy
+
+## Part (d) Forward Stepwise Regression in R
+```{r stepwise-fit}
+lm_step_construct <- function(X, y){
+  #' Constructor function for lm_step object
+  #' @param X: matrix. A matrix of features to train on.
+  #' @param y: numeric. A vector of targets to train on
+  #' @return : lm_step. a constructed lm_step object. 
+  
+  Z = matrix(rep(0, nrow(X) * (ncol(X)+1)), ncol=ncol(X)+1)
+  Z[, 1] = 1
+  lm_init = list(
+    n=nrow(X), # number of samples
+    p=ncol(X), # max no. predictors
+    k=0, # no features chosen yet 
+    X=X, # the data
+    x_sel_idx=c(),
+    X_sel=matrix(rep(NA, nrow(X)*ncol(X)), ncol=ncol(X)), # actual columns selected
+    X_nonsel_idx=1:ncol(X), # indices of columns in X not selected
+    y=y, # targets
+    beta_step=matrix(rep(0, ncol(X)^2), ncol=ncol(X)), # log of betas
+    r2_step=c(), # r-squared at each step
+    rss_step=c(), # rss at each step
+    tss =sum(sapply(y, function(y_i) (y_i - mean(y))^2)),
+    # is_fit=F, # for checks
+    j=1 # current predictor number
+  )
+  lm_init$Q = matrix(rep(0, (lm_init$p) * lm_init$n), ncol=lm_init$p)
+  lm_init$R = matrix(rep(0, (lm_init$p)^2), ncol=lm_init$p)
+  attr(lm_init, "class") = "lm_step"
+  lm_init
+}
+
+advance_qr <- function(lm_step, new_col_idx){
+  #' Performs G-S decomposition for one new column of X
+  #' @param lm_step: lm_step. An lm_step object, partially fitted
+  #' @param new_col_idx: integer. The index of the new column to add to the decomposition.
+  #' @return : lm_step. 
+  
+  # GRAM SCHMIDT STEP
+  ai = lm_step$X[, new_col_idx]
+  if (lm_step$j == 1 & is.null(lm_step$X_sel)){
+    vi = ai
+  }else{
+    vi = ai + lapply(1:(lm_step$j - 1), function(ll) 
+      - as.numeric(t(ai) %*% lm_step$Q[, ll]) * lm_step$Q[, ll]
+    ) %>% 
+      do.call("cbind", .) %>%
+      rowSums()
+  }
+  
+  ei = vi/as.numeric(sqrt(t(vi) %*% vi))
+  lm_step$Q[, lm_step$j] = ei
+  lm_step$x_sel_idx  = append(lm_step$x_sel_idx, new_col_idx)
+  lm_step$X_nonsel_idx = setdiff(lm_step$X_nonsel_idx, new_col_idx)
+  lm_step$X_sel[, lm_step$j] = lm_step$X[, new_col_idx]
+  lm_step$R[1:(lm_step$j), lm_step$j] = sapply(1:lm_step$j, function(ll) t(ai) 
+                                               %*% lm_step$Q[, ll])
+  lm_step$j = lm_step$j + 1
+  lm_step
+}
+
+get_beta <- function(lm_step, k=NULL){
+  #' Gets the coefficients (not the intercept) from an lm_step object,
+  #' retroactive to a step number
+  #' @param lm_step: lm_step. A (at least partially) fitted lm_step object
+  #' @param k: integer. The stepnumber to get beta retroactive to. 
+  #'           If null, uses entirety of fit
+  #' @return : numeric[k]. A vector of OLS coefficients
+  y = lm_step$y
+  k = ifelse(is.null(k), lm_step$j-1, k)
+  Q = lm_step$Q[, 1:k]; R = lm_step$R[1:k, 1:k]
+  backsolve(R, crossprod(Q, y)) %>%
+    as.numeric()
+}
+
+advance_selection <- function(lm_step){
+  #' Identifies which "next feature" to add, and adds that feature to a
+  #' copied version of the input
+  #' @param lm_step: An partially fit lm_step object
+  #' @return : lm_step. The lm_step, having been advanced to include the
+  #'          next available feature that most reduces RSS
+  
+  beta_current = get_beta(lm_step);
+  #beta_compare = coef(lm(lm_step$y ~ lm_step$X_sel[, 1:(lm_step$j-1)])) compare results to lm
+  lm_step$beta_step[lm_step$j-1,lm_step$x_sel_idx] = beta_current;
+  
+  if (length(beta_current) == 1){
+    rss_current = sum((lm_step$y - mean(lm_step$y) - 
+                         lm_step$X_sel[, 1:(lm_step$j-1)] * beta_current)^2)
+  }else{
+    rss_current = sum((lm_step$y - mean(lm_step$y) -
+                         lm_step$X_sel[, 1:(lm_step$j-1)] %*% beta_current)^2)
+  }
+  lm_step$rss_step = append(lm_step$rss_step, rss_current)
+  lm_step$r2_step = append(lm_step$r2_step, 1 - rss_current / lm_step$tss)
+  
+  candidates = lapply(lm_step$X_nonsel_idx, function(ll){
+    lm_step_cand = advance_qr(lm_step, ll);
+    beta_cand = get_beta(lm_step_cand);
+    rss_delta = rss_current - sum((lm_step_cand$y - mean(lm_step_cand$y) -
+                                     lm_step_cand$X_sel[, 1:(lm_step_cand$j-1)] %*% beta_cand)^2);
+    list(lm_step_cand, rss_delta);
+  })
+  candidates[[which.max(sapply(candidates, function(x) x[[2]]))]][[1]]
+}
+
+stepwise.fit <- function(X, y, k=NULL){
+  #' Fits OLS stepwise.
+  #' @param X: numeric[n, p]. A matrix of features, mean centered
+  #' @param y: numeric[n]. A vector of OLS targets
+  #' @param k: integer. The optional number of steps to take. If NULL, takes p steps
+  #' @return : lm_step. A fitted lm_step object.
+  
+  k = ifelse(is.null(k), ncol(X), k)
+  lm_step = lm_step_construct(unname(as.matrix(X)), y)
+  init_beta = which.min(sapply(1:ncol(lm_step$X), function(ll) 
+    sum((lm_step$y - mean(lm_step$y) -
+           as.numeric((t(lm_step$X[, ll]) %*%
+                         lm_step$y))/as.numeric(t(lm_step$X[, ll]) %*%
+                                                  lm_step$X[, ll]) * lm_step$X[, ll])^2)
+  ))
+  lm_step = advance_qr(lm_step, init_beta)
+  for (iter in 2:k){
+    lm_step = advance_selection(lm_step)
+  }
+  lm_step
+}
+
+```
+
+## Part (e) Prediction on new Matrix
+```{r predict}
+stepwise.predict <- function(X, lm_step, k=NULL){
+  #' Predicts from a fitted lm_step. 
+  #' @param X: numeric[n1, p]. A matrix of features to predict. 
+  #'        Note columns must be ordered identical to original input.
+  #' @param lm_step: lm_step. A fitted lm_step object
+  #' @param k: integer. Number of features to retroactivelly predict. 
+  #'        If null, uses entirety of fit.
+  #' @return : numeric[n1]. A vector of predictions.
+  k = ifelse(is.null(k), lm_step$j-1, k)
+  beta_hat = get_beta(lm_step, k=k)
+  if(length(beta_hat) - 1){
+    return(as.numeric(mean(lm_step$y) + 
+                        unname(as.matrix(X))[, lm_step$x_sel_idx[1:k]] %*% beta_hat))
+  }else{
+    return(as.numeric(mean(lm_step$y) + 
+                        unname(as.matrix(X))[, lm_step$x_sel_idx[1:k]] * beta_hat))
+  }
+}
+
+allsteps.predict <- function(model, X_eval) {
+  #' Predicts target based on each step of the forward stepwise model
+  #' @param model: lm_step. An lm_step containing the model parameters
+  #' @param X_eval: numeric[n1, p]. A matrix of features to predict.
+  #' @return : Matrix of predictions based on each coefficient set
+  
+  as.matrix(lapply(1:length(model$x_sel_idx), function(z){
+      yhat = stepwise.predict(X_eval, model, k=z);
+  }))
+}
+
+coef.matrix <- function(model, k) {
+  #' Returns formatted coefficient matrix for fitted model, with step
+  #' and R^2 (for k steps)
+  #' @param model: lm_step. An lm_step containing the model parameters
+  #' @param k: integer number of steps to view
+  #' @return : data.frame[k, k+2] of coefficient sets for model
+  
+  betas_df <- data.frame(model$beta_step)
+  betas_df <- betas_df[1:(k-1), colSums(betas_df, dims = 1L) != 0]
+  betas_df$step <- 1:(k-1)
+  betas_df$r2 <- overall_results$r2_step
+  betas_df
+}
+
+prediction.score <- function(model, X_eval, y_eval) {
+    #' Outputs the rss, mse, and misclassification error of a prediction
+    #' @param model: lm_step. An lm_step containing the model parameters
+    #' @param X_eval: numeric[n1, p]. A matrix of features to predict.
+    #' @param y_eval: numeric[n1]. The target to evaluate against
+    #' @return : data.frame. The RSS, MSE, and Misclassification error for each partial model
+    scoring = lapply(1:length(model$x_sel_idx), function(z){
+    yhat = stepwise.predict(X_eval, model, k=z);
+    yhat_binary = sapply(yhat, function(y) ifelse(y >= .5, 1, 0));
+    
+    rss = sum((y_eval - yhat)^2);
+    mse = mean((y_eval - yhat)^2);
+    misclass = mean(y_eval != yhat_binary);
+    c(rss, mse, misclass)
+  }) %>%
+    do.call("rbind", .) %>%
+    data.frame() %>%
+    `colnames<-`(c("RSS", "MSE", "MISCLASS"))
+  scoring$nfeat = 1:length(model$x_sel_idx)
+  scoring
+}
+
+```
+
+## Part (f) Application to Spam Data
+```{r fit-data}
+spam_data = read.csv("spamdata_indicated.csv")
+spam_data[, 55:57] = log(spam_data[, 55:57])
+  
+train_x_unscaled = spam_data[spam_data[, 59] == 0, 1:57]; 
+train_y = spam_data[spam_data[, 59] == 0, 58];
+test_x_unscaled = spam_data[spam_data[, 59] == 1, 1:57]; 
+test_y = spam_data[spam_data[, 59] == 1, 58];
+  
+# centering
+centers = train_x_unscaled %>%
+  colMeans() %>%
+  as.numeric()
+  
+train_x_scaled = lapply(1:nrow(train_x_unscaled), function(i)
+  as.numeric(train_x_unscaled[i, 1:57]) - centers
+) %>%
+  do.call("rbind", .)
+  
+test_x_scaled = lapply(1:nrow(test_x_unscaled), function(i)
+  as.numeric(test_x_unscaled[i, 1:57]) - centers
+) %>%
+  do.call("rbind", .)
+  
+# fit the full model
+k = ncol(train_x_scaled)
+full_model = stepwise.fit(train_x_scaled, train_y, k = k)
+
+```
+
+## Part (g) Cross Validation
+```{r cv-func}
+stepwise.cv.fit <- function(X, y, nfolds=10, k=NULL, S=2020){
+  #' Runs cross-validation on forward stepwise linear regression 
+  #' @param X: numeric[n1, p]. A matrix of features to predict. 
+  #'        Note columns must be ordered identical to original input.
+  #' @param y: numeric[n1]. The target
+  #' @param nfolds: integer. The number of cross-validation folds
+  #' @param k: integer. Number of features to retroactivelly predict. 
+  #'        If null, uses entirety of fit.
+  #' @param S: integer. The seed for CV sampling
+  #' @return : numeric[n1]. A vector of predictions.
+  set.seed(S)
+  
+  # cv preprocessing step
+  fold_idx = sample(1:nrow(X), nrow(X), replace=F)
+  folds = split(fold_idx, ceiling(seq_along(fold_idx) / ceiling(length(fold_idx)/nfolds)))
+  cv_result = lapply(folds, function(fold){
+    cat('-')
+    X_train = X[setdiff(fold_idx, fold), ]; y_train = y[setdiff(fold_idx, fold)];
+    X_dev = X[fold, ]; y_dev = y[fold];
+    # center data
+    centers = X_train %>% colMeans()
+    # apply centers to training
+    X_train = lapply(1:nrow(X_train), function(i)
+      as.numeric(X_train[i, ]) - centers
+    ) %>%
+      do.call("rbind", .)
+    X_dev = lapply(1:nrow(X_dev), function(i)
+      as.numeric(X_dev[i, ]) - centers
+    ) %>%
+      do.call("rbind", .)
+    
+    model = stepwise.fit(X_train, y_train, k=k)
+    scoring = prediction.score(model, X_dev, y_dev)
+    scoring
+  })
+  
+  cv_agg = do.call("rbind", cv_result) %>%
+    group_by(nfeat) %>%
+    summarise_all(., mean)
+  
+}
+```
+
+```{r cv-call}
+# note that CV automatically centers, so use unscaled here
+cv_results = stepwise.cv.fit(train_x_unscaled, train_y, nfolds=10, S=2020)
+
+# Minimum misclassification error achieved at 51 featues
+k_cv= which.min(cv_results$MISCLASS)
+k_cv
+```
+
+```{r misclass-plot}
+# plot misclassification error as a function of step in CV. 
+ggplot(cv_results, aes(x = nfeat, y = MISCLASS)) + geom_point()
+```
+
+## Part (h) Predictions on Test Data
+```{r predict-test}
+# predict results on test 
+full_model = stepwise.fit(train_x_scaled, train_y)
+test_results <- prediction.score(full_model, test_x_scaled, test_y)
+ggplot(test_results, aes(x = nfeat, y = MISCLASS)) + 
+  geom_line() +
+  geom_vline(xintercept=k_cv, linetype="dotted") 
+```
+The vertical line corresponds the number of steps selected by CV.
+
+## Part (i) Plots of fit per step
+```{r coef-path}
+# plot betas as a function of step and R^2 on all the training data
+k = ncol(train_x_scaled)
+overall_results = stepwise.fit(train_x_scaled, train_y, k=k)
+betas_df <- coef.matrix(overall_results, k)
+betas_dfStep <- melt(subset(betas_df, select=-c(r2)) , 
+                     id.vars = "step", 
+                     variable.name = "beta", 
+                     value.name = "coef")
+betas_dfR2 <- melt(subset(betas_df, select=-c(step)) , 
+                   id.vars = "r2", 
+                   variable.name = "beta", 
+                   value.name = "coef")
+```
+
+```{r plot1}
+# plot coefficient path as a function of step and R^2
+ggplot(betas_dfStep, aes(x = step, y = coef, group_by(beta))) + 
+  geom_path(aes(colour = beta), show.legend=FALSE) +
+  xlim(c(0,k+1)) + 
+  geom_vline(xintercept=k_cv, linetype="dotted") 
+```
+
+```{r plot2}
+ggplot(betas_dfR2, aes(x = r2, y = coef, group_by(beta))) + 
+  geom_path(aes(colour = beta), show.legend=FALSE) +
+  geom_vline(xintercept=betas_df$r2[k_cv], linetype="dotted") 
+```
+
+```{r first10tbl}
+# first 10 features selected
+first_ten.feats <- colnames(spam_data)[overall_results$x_sel_idx[1:10]]
+first_ten.coefs <- sapply(1:10, function(i) {
+  overall_results$beta_step[i,overall_results$x_sel_idx[i]] 
+})
+# show table for clarity
+data.frame(feature = first_ten.feats, coef1 = first_ten.coefs)
+```
+
+# Problem 7
+Preprocessing
+```{r prepr}
+# Read in and preprocess data
+zz_train = gzfile('zip.train.gz', 'rt')
+zz_test  = gzfile('zip.test.gz', 'rt')
+num_features = 256
+raw_train = as_tibble(read.csv(zz_train, header=F))
+raw_test = as_tibble(read.csv(zz_test,header=F))
+raw_train %>% separate(col = 1, sep = ' ', 
+                       into=as.character(c("digit", 1:num_features+1)), 
+                       convert = TRUE) -> dataset.train
+raw_test %>% separate(col = 1, sep = ' ',
+                      into = as.character(c("digit", 1:num_features+1)),
+                      convert = TRUE) -> dataset.test
+```
+
+## Part (i)
+```{r part_1}
+# Compare results of linear regression, LDA, and 
+# multiclass linear logistic regression
+# helper function to obtain class prediction from regression outputs
+lr_to_pred <- function(y) {round(min(max(y,0), 9))}
+# helper function to obtain error rate based on predicted vs. actual
+err_rate <- function(pred.y, test.y) {mean(pred.y != test.y)}
+# Linear Regression
+model.lr <- lm(digit ~ ., data = dataset.train)
+output.lr <- lapply(predict(model.lr, newdata = dataset.test[-1]), lr_to_pred)
+err_rate.lr <- err_rate(output.lr, dataset.test$digit)
+err_rate.lr # 74.5% test error
+# LDA
+model.lda <- lda(digit ~ ., data = dataset.train)
+output.lda <- predict(model.lda, newdata = dataset.test)$class
+err_rate.lda <- err_rate(output.lda, dataset.test$digit)
+err_rate.lda # 11.5% test error
+# Multiclass Logistic Regression
+model.mlr <- multinom(digit ~ ., data = dataset.train, MaxNWts = 4000, maxit=500)
+output.mlr <- predict(model.mlr, newdata = dataset.test[-1])
+err_rate.mlr <- err_rate(output.mlr, dataset.test$digit)
+err_rate.mlr # 16.6% test error
+```
+
+Linear Regression fares much worse than LDA and Logistic Regression, likely due to masking effects. LDA is ultimately the best classifier in the absence of shrinkage.
+
+## Part (ii)
+```{r part_2}
+# Helper function for obtaining predicted class from logistic regression
+f.extract_mlm <- function(x) { which.max(x) - 1}
+#' Get data frame of % deviance vs. test error from glmnet model
+#' @param train.x the training inputs as a matrix
+#' @param train.y the training outputs (list or matrix)
+#' @param test.x the test inputs as a matrix
+#' @param test.y the test outputs (list or matrix)
+#' @param alpha hyperparameter for L1 vs. L2 penalty
+#' @param family the (GLM) model family to fit 
+#' @param f.extract a function to extract predictions from the model
+#' @return a data frame of the % deviance vs. test error for each lambda
+glm_dev_vs_err <- function(train.x, train.y, test.x, test.y, 
+                           alpha, family, f.extract) {
+  train_coded.y <- model.matrix(~ as.factor(train.y) + 0)
+  fit <- glmnet(train.x, train_coded.y, alpha = alpha, family = family)
+  
+  # apply model to the test data
+  result <- lapply(fit$lambda, 
+                   function(s) predict(fit, type = "response", 
+                                       newx = test.x, s = s))
+  # obtain predicted classes from results
+  ghats <- lapply(result, function(t) apply(t, MARGIN = 1, FUN = f.extract))
+  
+  # obtain error rates for each lambda
+  err_rates <- lapply(ghats, err_rate, test.y = test.y)
+  data.frame(dev = fit$dev.ratio, test_error = unlist(err_rates))
+}
+# adapt train and test data to glmnet
+train.y <- dataset.train[[1]]
+train.x <- as.matrix(dplyr::select(dataset.train, -c("digit")))
+test.y <- dataset.test[[1]]
+test.x <- as.matrix(dplyr::select(dataset.test, -c("digit")))
+```
+
+Plot for Linear Regression
+```{r linrplot}
+# Linear Regression
+dev_to_err.glmlin <- glm_dev_vs_err(train.x, train.y, test.x, test.y, 
+                                   0.3, "mgaussian", f.extract_mlm)
+ggplot(dev_to_err.glmlin, aes(x = dev, y = test_error)) +
+  geom_point() +
+  labs(title="Test Error for Multi-Response Linear Regression", x ="R^2", y = "Test Error") +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent)
+```
+
+Plot for Multi-class Logistic Regression
+```{r logrplot}
+# Logistic Regression
+# Note: should y be a N x k response matrix? I think it's ok as
+dev_to_err.glmlog <- glm_dev_vs_err(train.x, train.y, test.x, test.y, 
+                                    0.3, "multinomial", f.extract_mlm)
+ggplot(dev_to_err.glmlog, aes(x = dev, y = test_error)) +
+  geom_point() +
+  labs(title="Test Error for Multi-Response Logistic Regression", x ="D^2", y = "Test Error") +
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent)
+```
+
+## Part (iii)
+The optimization problem being solved in Linear Regression is:
+$\hat{\beta} = \text{argmin}_{(\beta, \beta_0)} [\frac{1}{2N}\sum_{i=1}^N || y_i - \beta_0 - x_i^T\beta||_F^2 + \lambda[(1-\alpha)\frac{1}{2}||\beta||_F^2  + \alpha \sum_{j=1}^p ||\beta_j||_2]]$
+
+In the multiresponse case, $\beta$ is a matrix composed of coefficient vectors per response, so the operation that corresponds to the L2-norm in the vector case is the Frobenius Norm $||.||_F$, which takes the the sum of squares for each element in the matrix. Meanwhile, the operation that corresponds to the L1-norm is the sum of the magnitudes of the feature vectors (this is L1 in the feature dimension, while the Frobenius norm is L2 in the feature dimension.)
+
+The optimization problem being solved in Multinomial Logistic Regression is:
+$\hat{\beta} = \text{argmin}_{(\beta, \beta_0)} [-l(\beta) - \lambda[(1-\alpha)\frac{1}{2}||\beta||_F^2  + \alpha \sum_{j=1}^p ||\beta_j||_2]]$, where $l(\beta)$ is the likelihood function:
+
+$l(\beta) = \frac{1}{N}\sum_{i=1}^N(\sum_{l=1}^K I(g_i=l) \log\mathbb{P}(G = k | X = x_i)) = \frac{1}{N}\sum_{i=1}^N[\sum_{l=1}^K I(g_i=l)(\beta_{0k} + \beta_k^Tx_i) - \log(\sum_{l=1}^K \exp(\beta_{0k} + x_i^T\beta_k))]$
