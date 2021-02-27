@@ -29,6 +29,23 @@ $\hat{y}_i = (\hat{\beta}_0 + \sum_{i=1}^p \mu_j \hat{\beta}_j) + \sum_{j=1}^p (
 If we take the product $Z^Tr_s \in \mathbb{R}^{p-q}$, the elements of larger magnitude will correspond to features that are more highly correlated with the residuals, so adding them to the model will contribute most to fitting the model in the direction of the residuals, i.e. reducing error.
 
 ## Part (c) Overall Strategy
+At a high-level, our plan to perform forward stepwise regression breaks down as follows:\newline
+
+0.) Mean-center the features. This saves us intercept recalculations down the road, as no matter how many (mean-centered) features we add, this will remain the intercept. \newline
+
+1.) Initialise the "null" model to be the mean of the y. This mean, by the centering in 0.), will remain the intercept hereafter. \newline
+
+2.) Scan the remaining p features; for each, compute a univariate regression, and the univariate regression that maximizes $||(y - \bar{y}||_2^2 - RSS_{uv}$ most is the first feature included. \newline
+
+3.) Once this feature has been selected, and it's (univariate) coefficient saved, initialise a QR factorization process (i.e. a running Graham-Schmidt algorithm) with this first feature as the "jumping off point". \newline
+
+4.) Scan the remaining $p-1$ features. For each feature, temporarily add it to the running Graham-Schmidt/QR decomposition. Then use the triangular structure of the QR decomposition to efficiently solve for the temporary/proposed coefficients of the next step.  \newline
+
+5.) Evaluate the drops in RSS's of all the "temporary" Graham-Schmidt advancements (these are cheap -- they just build off of the previous "permanent"/selected features); retain that which results in the largest drop permanently. \newline
+
+6.) Repeat 4-5 until all features have been used up.  \newline
+
+7.) Now, Q is an $n \times p$ orthogonal matrix, and R is a $p\times p$ upper triangular matrix. If we wish to retrieve coefficients retroactive to a particular step number, we need only to backsolve via Q[1:step, 1:step], R[1:step, 1:step]. In this way, the QR/G-S decomposition allows us to preserve previous iterations of the model, for ease of comparison.  \newline
 
 ## Part (d) Forward Stepwise Regression in R
 ```{r stepwise-fit}
@@ -232,7 +249,7 @@ prediction.score <- function(model, X_eval, y_eval) {
 
 ## Part (f) Application to Spam Data
 ```{r fit-data}
-spam_data = read.csv("spamdata_indicated.csv")
+spam_data = read.csv("spamdata_indicated.csv", colnames=F)
 spam_data[, 55:57] = log(spam_data[, 55:57])
   
 train_x_unscaled = spam_data[spam_data[, 59] == 0, 1:57]; 

@@ -226,7 +226,7 @@ test_vs_empirical <- function(train_y, train_x_scaled){
 
 main <- function(){
   #source("stepwise_regression.R")
-  spam_data = read.csv("spamdata_indicated.csv")
+  spam_data = read.csv("spamdata_indicated.csv", colnames=F)
   spam_data[, 55:57] = log(spam_data[, 55:57])
   
   train_x_unscaled = spam_data[spam_data[, 59] == 0, 1:57]; train_y = spam_data[spam_data[, 59] == 0, 58]
@@ -288,8 +288,4 @@ main <- function(){
   # show table for clarity
   data.frame(feature = first_ten.feats, coef1 = first_ten.coefs)
 }
-
-emp_fit = empirical_stepwise(train_x_scaled[, 1:57], train_y)
-beta_emp = as.numeric(coef(emp_fit))%>%.[2:length(.)]
-round(get_beta(full_model, k=length(beta_emp)), 7) == round(beta_emp, 7)
 
