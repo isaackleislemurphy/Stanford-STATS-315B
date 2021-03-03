@@ -13,7 +13,7 @@ configure_training_data <- function(filepath="train_data.csv"){
 }
 
 
-configure_fold_indices <- function(df, cv_start=.5){
+configure_folds <- function(df, cv_start=.5){
   #' Sets up the fold indices, so that we're all CV'ing on the same thing
   #' @param df: data.frame. A configured dataframe, having been passed through `configure_training_data()`
   #' @param cv_start: numeric[1]. The point at which to start building folds. E.g. 1/2 would mean dev sets start halfway through time series.
@@ -21,7 +21,7 @@ configure_fold_indices <- function(df, cv_start=.5){
   #' training set, having been split into train/dev on a particular day. This inner list then contains keys `train` and `dev`, corresponding to the approprite sets
   #' As an example, 'result$`2020-07-04`$train' would return training data PRIOR TO 7/4/2020, while 'result$`2020-07-04`$dev' would return the CV data corresponding to that
   #' particular fold.
-  
+  df$date = as.character(df$date)
   dates_all = as.character(sort(unique(df$date)))
   cv_dates = dates_all[dates_all >= dates_all[as.integer(length(dates_all)*cv_start)]]
   folds = lapply(cv_dates, function(dt){
