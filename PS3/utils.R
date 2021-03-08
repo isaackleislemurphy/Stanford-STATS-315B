@@ -62,3 +62,52 @@ fit_predict <- function(train_df,
   predict_df
 }
 
+
+
+# Scoring Helpers ---------------------------------------------------------
+
+extract_folds_inner <- function(result, 
+                                yhat_cols, 
+                                ytrue_col="response", 
+                                collapse_func=function(x, ...){x},
+                                ...){
+  #' Used to score a list of folds corresponding to one hyperparam setting, e.g. the inner loop (j) of 
+  #' ols_demo. Note that in some cases, a single hyperparameter setting may come with multiple additional hyperparams
+  #' for another hyperparam (e.g. glmnet, which for a single alpha automatically tries 100 different lambdas. see ?glmnet).
+  #'  As such,this single hyperparam may actually contain multiple such hyperparams; this function extracts and "stacks" those results
+  #'  for direct comparison
+  #'  @param result : list[data.frame]. A list of dev-set projections, corresponding to folds/break points. Each item is a dataframe,
+  #'  containing a "response" column with the true value and other (custom) columns with predicted columns
+  #'  @param metric : character. One of 'rmse', 'mae', 'pearson', 'spearman', for scoring metric. 
+  #'  @param yhat_cols : character[s]. A vector of column names corresponding to predictions for the dev set. May be multiple columns,
+  #'  like in the glmnet auto-100 lambda situation. 
+  #'  @param ytrue_col : character. The column name of the true observation.
+  #'  @param collapse_func : function. A scoring function to collapse/score the predictions, to manage size. Must include
+  #'  its own groupby clause
+  lapply(1:length(result), function(j){
+    lapply(yhat_cols, function(col){
+      result[[j]][, c("date", ytrue_col, col)] %>%
+        rename(yhat = eval(col)) %>%
+        mutate(hyperparam = col,
+               fold_idx=  j) # for groupby --> min purposes
+    }) %>%
+      do.call("rbind", .)
+  }) %>%
+    do.call("rbind", .) %>%
+    collapse_func(., ...)-> result_stacked
+  result_stacked
+}
+
+extract_folds_outer <- function(result, tunegrid, ...){
+  #' Used to extract/stack results over the "outer" grid, i.e. the one provided outside
+  #' of the fit function. See ols_demo.R --> grid_lambda
+  lapply(1:nrow(tunegrid), function(i){
+    extract_folds_inner(result[[i]], ...) -> result_outer;
+    # add the hyperparams corresponding to grid row
+    for (gridcol in colnames(tunegrid)){
+      result_outer[gridcol] = tunegrid[i, gridcol]
+    }
+    result_outer
+  }) %>%
+    do.call("rbind", .)
+}

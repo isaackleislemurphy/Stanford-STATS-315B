@@ -6,7 +6,7 @@ source("constants.R")
 source("utils.R")
 
 training_data = read.csv("./data/training_data_processed.csv") %>%
-  select(-X, -X.1) %>% # comment this out if necessary
+  dplyr::select(-X, -X.1) %>% # comment this out if necessary
   configure_folds()
 
 
@@ -30,7 +30,7 @@ lapply(1:length(training_data), function(i){
 # Example 2: Tuning L1/L2 -------------------------------------------------
 
 grid_lambda = expand.grid(
-  "alpha" = c(1e-1, 1e-2, 1e-3, 1e-4)
+  "alpha" = c(1e-1)
 )
 
 lapply(1:nrow(grid_lambda), function(j){
@@ -61,6 +61,8 @@ lapply(1:nrow(grid_lambda), function(j){
     result %>%
       mutate(fold_idx = i) # for filtering purposes later
   })  -> fold_result
-})
+}) -> result_glmnet_demo
 
+
+extract_folds_outer(result_glmnet_demo, tunegrid, yhat_cols = paste0("s", 45:50))
 

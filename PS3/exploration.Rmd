@@ -1,0 +1,165 @@
+---
+title: 'HW 3.6: Exploration'
+author: "Isaac Kleisle-Murphy"
+date: "3/7/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(psych)
+source("constants.R")
+source("utils.R")
+source("ingest.R")
+
+covid_df = read.csv("./data/training_data_processed.csv") %>% .[, 3:ncol(.)]
+```
+
+## 1.) Correlation plots/pairs
+
+```{r}
+
+feat_names = c("response", CONT_COLNAMES)
+cors_with_response = cor(covid_df[, feat_names])[1, ] %>% as.numeric()
+corr_df = data.frame(feature = feat_names, 
+                     r = cors_with_response) %>%
+  arrange(desc(cors_with_response))
+  
+corr_df
+```
+Note that a lot of the similar features are similarly correlated. Suggests PCA/Lasso/Ridge could be useful to knock down redundancy?
+
+#### Correlation plots part 1
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 2:6)] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+#### Correlation plots part 2
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 7:11)] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+#### Correlation plots part 2
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 12:16)] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+#### Correlation plots part 2
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 17:21)] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+#### Correlation plots part 2
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 22:26)] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+
+#### Correlation plots part 2
+```{r}
+# http://www.sthda.com/english/wiki/scatter-plot-matrices-r-base-graphs
+pairs.panels(covid_df[, corr_df %>% pull(feature) %>% .[c(1, 26:length(.))] %>% as.character()], 
+             method = "pearson", # correlation method
+             hist.col = "#00AFBB",
+             density = TRUE,  # show density plots
+             ellipses = TRUE # show correlation ellipses
+             )
+```
+
+My main takeaway here is that a lot of the facebook features are both correlated, but also skewed. Might be worth a log transform, we'll revisit in a second. 
+
+
+## 2.) The Response Variable
+```{r}
+ggplot(covid_df, aes(x = response)) +
+  geom_density()
+
+ggplot(covid_df, aes(x = response, color=as.factor(county))) +
+  geom_density()
+
+ggplot(covid_df, aes(x = log(response))) +
+  geom_density()
+
+ggplot(covid_df, aes(x = log(response), color=as.factor(county))) +
+  geom_density()
+```
+
+Would really like to have N for a binomial model here. Obviously county matters
+
+
+## 3.) Seasonalities
+
+#### Overall Plot
+```{r}
+covid_df = covid_df %>%
+  left_join(., data.frame(date = unique(covid_df$date), date_idx = 1:length(unique(covid_df$date))),
+            by=c("date"))
+
+ggplot(covid_df, aes(x = date_idx, y = response)) + 
+  geom_point() + 
+  stat_smooth()
+
+ggplot(covid_df, aes(x = date_idx, y = log(response + 1))) + 
+  geom_point() + 
+  stat_smooth()
+```
+
+
+Things have clearly changed over time (no duh); we'll need to model either with something smooth or as a varying-coefficient model. 
+
+```{r}
+ggplot(covid_df, aes(x = date_idx, y = response, color = as.factor(county))) + 
+  geom_point() + 
+  stat_smooth()
+
+ggplot(covid_df, aes(x = date_idx, y = log(response), color = as.factor(county))) + 
+  geom_point() + 
+  stat_smooth()
+```
+
+Takeaway here is that time interacts with county: we'll probably want something like ` ~ time + county + time*county`. 
+
+
+## Back to Correlations: Logging Facebook
+```{r}
+cors_log_response = cor(covid_df[, as.character(corr_df$feature)] %>% mutate_at(., 2:length(corr_df$feature), function(x) log(x + 1e-10)))[1, ] %>% as.numeric()
+
+corr_log_df = data.frame(feature =  corr_df$feature, 
+                         r = cors_log_response) %>%
+  arrange(desc(cors_log_response))
+corr_log_df
+```
+
+Nope nvm.
