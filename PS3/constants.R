@@ -1,4 +1,5 @@
 CONT_COLNAMES = c(
+  "date_idx", # added
   "chng_smoothed_adj_outpatient_cli", 
   "chng_smoothed_adj_outpatient_covid", 
   "chng_smoothed_outpatient_cli", 
