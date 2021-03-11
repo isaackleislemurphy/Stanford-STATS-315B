@@ -22,11 +22,12 @@ configure_folds <- function(df, cv_start=.5){
   #' As an example, 'result$`2020-07-04`$train' would return training data PRIOR TO 7/4/2020, while 'result$`2020-07-04`$dev' would return the CV data corresponding to that
   #' particular fold.
   df$date = as.character(df$date)
+  df$county = as.character(df$county)
   dates_all = as.character(sort(unique(df$date)))
   cv_dates = dates_all[dates_all >= dates_all[as.integer(length(dates_all)*cv_start)]]
   folds = lapply(cv_dates, function(dt){
     train = df %>% filter(date < dt);
-    dev = df %>% filter(date >= dt)
+    dev = df %>% filter(date == dt)
     list(train=train, dev=dev)
   }) %>%
     `names<-`(cv_dates)

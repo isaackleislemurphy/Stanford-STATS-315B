@@ -93,8 +93,9 @@ extract_folds_inner <- function(result,
     }) %>%
       do.call("rbind", .)
   }) %>%
-    do.call("rbind", .) %>%
-    collapse_func(., ...)-> result_stacked
+    do.call("rbind", .) %>% 
+    group_by(hyperparam, fold_idx, date) %>%
+    do(collapse_func(., ...)) -> result_stacked
   result_stacked
 }
 
@@ -110,4 +111,13 @@ extract_folds_outer <- function(result, tunegrid, ...){
     result_outer
   }) %>%
     do.call("rbind", .)
+}
+
+score_loss <- function(df, yhat_col='yhat', ytrue_col='response'){
+  df = df %>% mutate_at(yhat_col, function(x) ifelse(x <= 0, 1e-20, x))
+  loss = abs(
+    log(1 + df[, ytrue_col]) - log(1 + df[, yhat_col])
+  ) %>% sum()
+  if (nrow(data.frame(loss = loss/nrow(df)) %>% filter(is.na(loss)))){browser()}
+  data.frame(loss = loss/nrow(df))
 }
