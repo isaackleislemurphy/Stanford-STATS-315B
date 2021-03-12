@@ -35,3 +35,18 @@ configure_folds <- function(df, cv_start=.5){
 }
 
 
+load_training_data <- function(){
+  #' Reads in training data and sets up folds
+  full_df = read.csv("./data/training_data_processed.csv")
+  full_df = full_df %>%
+    left_join(., data.frame(date = unique(full_df$date), date_idx = 1:length(unique(full_df$date))),
+              by=c("date"))
+  
+  # Configure cross validation folds for the full dataset
+  full_df %>%
+    dplyr::select(-X, -X.1) %>% # comment this out if necessary
+    configure_folds() -> training_data
+  training_data
+}
+
+

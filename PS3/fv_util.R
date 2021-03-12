@@ -1,7 +1,4 @@
 library(dplyr)
-library(glmnet)
-library(glmnetUtils)
-library(gam)
 library(stringr)
 
 source("ingest.R")
@@ -18,7 +15,7 @@ folds.predict <- function(data, model_func, predict_func, param, ...) {
     cat("Fold ", i, "; ")
     # extract training and prediction data for that fold
     train_df = data[[i]][[1]] %>%
-      select_at(c(CONT_COLNAMES, "response"));
+      select_at(c(CONT_COLNAMES, "county", "response"));
     predict_df = data[[i]][[2]];
     
     # fit and predict for fold
@@ -49,7 +46,7 @@ forward.val <- function(hp.grid, dev_data, model_func, predict_func, ...) {
   #' @param predict_func Function that predict the model output.
   #' @param ... additional parameters to model_func
   lapply(1:nrow(hp.grid), function(j){
-    cat(' - tune number: ', j, '/', nrow(grid_lambda), '\n')
+    cat(' - tune number: ', j, '/', nrow(hp.grid), '\n')
     # extract the hyperparams for this iteration
     pj = hp.grid$param[j]
     # iterate over folds
@@ -82,43 +79,44 @@ full.predict.score <- function(hp.grid, dev_data, test_data,
   summary <- summarize.result(result, hp.grid)
   best_param <- summary$param[1]
   test_preds <- folds.predict(test_data, model_func, predict_func, param, ...)
+  browser()
   extract_folds_inner(test_preds, yhat_cols = summary$hyperparam[1], collapse_func=score_loss)
 }
 
 # Execution ---------------------------------------------------------
 
-# (Step 0) Preprocess the data
-
-#Read in the data
-full_df = read.csv("./data/training_data_processed.csv")
-full_df = full_df %>%
-  left_join(., data.frame(date = unique(full_df$date), date_idx = 1:length(unique(full_df$date))),
-            by=c("date"))
-
-# Configure cross validation folds for the full dataset
-full_df %>%
-  dplyr::select(-X, -X.1) %>% # comment this out if necessary
-  configure_folds() -> training_data
-
-# Split into training/dev data and holdout test data.
-dev_data = training_data[DATES_DEV]
-test_data = training_data[DATES_HOLDOUT]
-
-# (Step 1) Define the grid of hyperparameters to test
-grid_df = expand.grid(
-  "param" = c(2:5)
-)
-
-# (Step 2) Define a wrapper function for creating the model with argument "param"
-model_func <- function(param, data) {
-  formula <- response ~ . + ns(date_idx, df = param)
-  lm(formula, data=data)
-}
-
-# (Step 3) Define a wrapper function for predicting response from the model
-predict_func <- function(mod, newdata){
-  newdata$yhat=stats::predict(mod, newdata=newdata)
-  newdata
-}
-
-score <- full.predict.score(grid_df, dev_data, test_data, model_func, predict_func)
+# # (Step 0) Preprocess the data
+# 
+# #Read in the data
+# full_df = read.csv("./data/training_data_processed.csv")
+# full_df = full_df %>%
+#   left_join(., data.frame(date = unique(full_df$date), date_idx = 1:length(unique(full_df$date))),
+#             by=c("date"))
+# 
+# # Configure cross validation folds for the full dataset
+# full_df %>%
+#   dplyr::select(-X, -X.1) %>% # comment this out if necessary
+#   configure_folds() -> training_data
+# 
+# # Split into training/dev data and holdout test data.
+# dev_data = training_data[DATES_DEV]
+# test_data = training_data[DATES_HOLDOUT]
+# 
+# # (Step 1) Define the grid of hyperparameters to test
+# grid_df = expand.grid(
+#   "param" = c(2:5)
+# )
+# 
+# # (Step 2) Define a wrapper function for creating the model with argument "param"
+# model_func <- function(param, data) {
+#   formula <- response ~ . + ns(date_idx, df = param)
+#   lm(formula, data=data)
+# }
+# 
+# # (Step 3) Define a wrapper function for predicting response from the model
+# predict_func <- function(mod, newdata){
+#   newdata$yhat=stats::predict(mod, newdata=newdata)
+#   newdata
+# }
+# 
+# score <- full.predict.score(grid_df, dev_data, test_data, model_func, predict_func)
