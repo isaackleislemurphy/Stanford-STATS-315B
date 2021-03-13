@@ -15,7 +15,7 @@ folds.predict <- function(data, model_func, predict_func, param, ...) {
     cat("Fold ", i, "; ")
     # extract training and prediction data for that fold
     train_df = data[[i]][[1]] %>%
-      select_at(c(CONT_COLNAMES, "county", "response"));
+      select_at(c(CONT_COLNAMES, "county", "response", "date_idx"));
     predict_df = data[[i]][[2]];
     
     # fit and predict for fold
@@ -55,10 +55,10 @@ forward.val <- function(hp.grid, dev_data, model_func, predict_func, ...) {
 }
 
 # Extract Results from Forward Validation
-summarize.result <- function(result, hp.grid) {
-  #' @param result reulst from forward validation
+summarize.result <- function(result, hp.grid, yhat_cols) {
+  #' @param result result from forward validation
   #' @param hp.grid a grid of hyperparameters to test, called "param"
-  grid_results = extract_folds_outer(result, hp.grid, yhat_cols = paste0("s", 48:50), collapse_func=score_loss) %>% 
+  grid_results = extract_folds_outer(result, hp.grid, yhat_cols = yhat_cols, collapse_func=score_loss) %>% 
     group_by(hyperparam, param) %>%
     summarise(loss = mean(loss)) %>% 
     arrange(loss)
@@ -67,20 +67,22 @@ summarize.result <- function(result, hp.grid) {
 # Complete Prediction Function
 full.predict.score <- function(hp.grid, dev_data, test_data, 
                                model_func= function(param, data) {lm(response ~ ., data=data)}, 
-                               predict_func, ...) {
+                               predict_func, 
+                               yhat_cols, ...) {
   #' @param hp.grid      a grid of hyperparameters to test, called "param"
   #' @param dev_data     input data.frame with training and dev split into K folds
   #' @param test_data    data.frame against which to assess the model
   #' @param model_func   Function that generates the model. Must use a wrapper that
   #'        includes the argument "param" for the hyperparameter that will be passed
-  #' @param predict_func Function that predict the model output. 
+  #' @param predict_func Function that predict the model output.
+  #' @param yhat_cols    Characters naming the columns output by predict_func
+  #' @param ...          Additional parameters to pass to model.func 
   
   result <- forward.val(hp.grid, dev_data, model_func, predict_func, ...)
-  summary <- summarize.result(result, hp.grid)
+  summary <- summarize.result(result, hp.grid, yhat_cols)
   best_param <- summary$param[1]
-  test_preds <- folds.predict(test_data, model_func, predict_func, param, ...)
-  browser()
-  extract_folds_inner(test_preds, yhat_cols = summary$hyperparam[1], collapse_func=score_loss)
+  test_preds <- folds.predict(test_data, model_func, predict_func, best_param, ...)
+  list(best_param, extract_folds_inner(test_preds, yhat_cols = summary$hyperparam[1], collapse_func=score_loss))
 }
 
 # Execution ---------------------------------------------------------
