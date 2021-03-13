@@ -58,7 +58,6 @@ grid_results = extract_folds_outer(result_glmnet_demo, grid_lambda, yhat_cols = 
   summarise(loss = mean(loss)) %>% 
   arrange(loss)
 
-
 # use the best tune to make predictions
 lapply(1:length(test_data), function(i){
   # extract training and prediction data for that fold
@@ -85,10 +84,11 @@ lapply(1:length(test_data), function(i){
 }) %>%
   `names<-`(names(test_data)) -> test_preds # rbind test preds if you wish to compare
 
+grid_results$alpha
 # prediction_scoring
 ols_score = extract_folds_inner(test_preds, yhat_cols = grid_results$hyperparam[1], collapse_func=score_loss)
-
-
+sum(ols_score["loss"])
+# Baseline loss is 14.15
 
 # Baseline 2: PCA ---------------------------------------------------------
 
@@ -139,7 +139,6 @@ grid_results = extract_folds_outer(result_pca_demo, grid_ncomp, yhat_cols = "yha
   summarise(loss = mean(loss)) %>% 
   arrange(loss)
 
-
 # use the best tune to make predictions
 lapply(1:length(test_data), function(i){
   # extract training and prediction data for that fold
@@ -171,3 +170,6 @@ lapply(1:length(test_data), function(i){
 
 # prediction_scoring
 pca_score = extract_folds_inner(test_preds, yhat_cols = grid_results$hyperparam[1], collapse_func=score_loss)
+sum(pca_score["loss"])
+# Best K for PCA = 5 / 31
+# Total loss for November Prediction = 7.934045
