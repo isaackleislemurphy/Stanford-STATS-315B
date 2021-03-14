@@ -121,3 +121,19 @@ score_loss <- function(df, yhat_col='yhat', ytrue_col='response'){
   if (nrow(data.frame(loss = loss/nrow(df)) %>% filter(is.na(loss)))){browser()}
   data.frame(loss = loss/nrow(df))
 }
+
+
+compile_lag <- function(df, lb=3){
+  #' Builds lags
+  #' @param df: data.frame. A dataframe of training data
+  #' @param lb: integer. Time window to look back over, and join lags t-1, ..., t-lb. 
+  #' @return : data.frame. A dataframe with time lags. 
+  lag_df = df
+  for (lag in 1:lb){
+    lag_df = lag_df %>%
+      inner_join(., df %>% mutate(date_idx = date_idx + lag),
+                 by = c("county", "date_idx"),
+                 suffix = c("", lag))
+  }
+  lag_df
+}
