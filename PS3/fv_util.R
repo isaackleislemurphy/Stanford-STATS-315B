@@ -5,7 +5,7 @@ source("ingest.R")
 source("constants.R")
 source("utils.R")
 
-folds.predict <- function(data, model_func, predict_func, param, ...) {
+folds.predict <- function(data, model_func, predict_func, param, addl_cols=c(), ...) {
   #' @param data Input data.frame with training and dev split into K folds
   #' @param model_func Function that generates the model
   #' @param predict_funct Function that predict the model output.
@@ -14,8 +14,12 @@ folds.predict <- function(data, model_func, predict_func, param, ...) {
   lapply(1:length(data), function(i){
     cat("Fold ", i, "; ")
     # extract training and prediction data for that fold
-    train_df = data[[i]][[1]] %>%
-      select_at(c(CONT_COLNAMES, "county", "response", "date_idx"));
+    train_idx = 1
+    if (i > 31) {
+      train_idx = i - 31
+    }
+    train_df = data[[train_idx]][[1]] %>%
+      select_at(c(CONT_COLNAMES, addl_cols, "county", "response", "date_idx"));
     predict_df = data[[i]][[2]];
     
     # fit and predict for fold
@@ -39,7 +43,7 @@ folds.predict <- function(data, model_func, predict_func, param, ...) {
     `names<-`(names(data)) -> result
 }
 
-forward.val <- function(hp.grid, dev_data, model_func, predict_func, ...) {
+forward.val <- function(hp.grid, dev_data, model_func, predict_func, addl_cols=c(), ...) {
   #' @param hp.grid a grid of hyperparameters to test, called "param"
   #' @param dev_data Input data.frame with training and dev split into K folds
   #' @param model_func Function that generates the model
@@ -50,7 +54,7 @@ forward.val <- function(hp.grid, dev_data, model_func, predict_func, ...) {
     # extract the hyperparams for this iteration
     pj = hp.grid$param[j]
     # iterate over folds
-    folds.predict(dev_data, model_func, predict_func, pj, ...)
+    folds.predict(dev_data, model_func, predict_func, pj, addl_cols, ...)
   })
 }
 
@@ -68,7 +72,7 @@ summarize.result <- function(result, hp.grid, yhat_cols) {
 full.predict.score <- function(hp.grid, dev_data, test_data, 
                                model_func= function(param, data) {lm(response ~ ., data=data)}, 
                                predict_func, 
-                               yhat_cols, ...) {
+                               yhat_cols, addl_cols=c(), ...) {
   #' @param hp.grid      a grid of hyperparameters to test, called "param"
   #' @param dev_data     input data.frame with training and dev split into K folds
   #' @param test_data    data.frame against which to assess the model
@@ -78,10 +82,11 @@ full.predict.score <- function(hp.grid, dev_data, test_data,
   #' @param yhat_cols    Characters naming the columns output by predict_func
   #' @param ...          Additional parameters to pass to model.func 
   
-  result <- forward.val(hp.grid, dev_data, model_func, predict_func, ...)
+  result <- forward.val(hp.grid, dev_data, model_func, predict_func, addl_cols, ...)
   summary <- summarize.result(result, hp.grid, yhat_cols)
   best_param <- summary$param[1]
-  test_preds <- folds.predict(test_data, model_func, predict_func, best_param, ...)
+  print(summary$param[1])
+  test_preds <- folds.predict(test_data, model_func, predict_func, best_param, addl_cols, ...)
   list(best_param, extract_folds_inner(test_preds, yhat_cols = summary$hyperparam[1], collapse_func=score_loss))
 }
 
