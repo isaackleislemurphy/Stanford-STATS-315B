@@ -87,8 +87,8 @@ lapply(1:length(test_data), function(i){
 grid_results$alpha
 # prediction_scoring
 ols_score = extract_folds_inner(test_preds, yhat_cols = grid_results$hyperparam[1], collapse_func=score_loss)
-sum(ols_score["loss"])
-# Baseline loss is 14.15
+mean(ols_score$loss)
+# Baseline average loss is 0.471679
 
 # Baseline 2: PCA ---------------------------------------------------------
 
@@ -170,6 +170,6 @@ lapply(1:length(test_data), function(i){
 
 # prediction_scoring
 pca_score = extract_folds_inner(test_preds, yhat_cols = grid_results$hyperparam[1], collapse_func=score_loss)
-sum(pca_score["loss"])
+mean(pca_score$loss)
 # Best K for PCA = 5 / 31
-# Total loss for November Prediction = 7.934045
+# Average loss for November Prediction = 0.2644682
