@@ -60,5 +60,35 @@ grid_results = extract_folds_outer(result_county_spline, grid_df, yhat_cols = "y
 
 
 
+# Testing on November data
+
+# df=20 was selected
+
+lapply(1:length(test_data), function(i){
+  # extract training and prediction data for that fold
+  train_df = test_data[[i]][[1]] %>%
+    dplyr::select_at(c(CONT_COLNAMES, "county", "response","date_idx"));
+  predict_df = test_data[[i]][[2]];
+  # fit and predict for fold
+  result = fit_predict(
+    train_df=train_df, # fit_and_predict() will scale for us
+    predict_df=predict_df, # predict on this (we'll probably just use only the "next" entry, but can't hurt to predict for all)
+    # predict using glmnet formula
+    model_func=lm,
+    # predict.glmnet outputs one prediction for each lambda, so each shall be a column
+    predict_func = function(fit, newdata){bind_cols(newdata, data.frame(yhat=predict(fit, newdata=newdata)))},
+    # we will scale these continuous column names
+    scale_cols=CONT_COLNAMES,
+    # the formula to be used
+    formula=as.formula(response ~ . +ns(date_idx, df=20))
+  )
+  
+  result %>%
+    mutate(fold_idx = i) # for filtering purposes later
+}) %>%
+  `names<-`(names(test_data)) -> fold_result -> result_county_spline_test
+
+
+
 
 
