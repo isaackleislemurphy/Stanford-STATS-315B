@@ -2,7 +2,6 @@ library(dplyr)
 library(glmnet)
 library(glmnetUtils)
 library(stringr)
-library(splines)
 
 source("ingest.R")
 source("constants.R")
@@ -13,16 +12,14 @@ CONT_COLNAMES = setdiff(CONT_COLNAMES, "date_idx")
 
 training_data = load_training_data()
 
-step_data = training_data[[DATES_DEV[33]]]
-
-dev_data = training_data[DATES_DEV[34:63]]
+step_data = training_data[[DATES_DEV[43]]]
+dev_data = training_data[DATES_DEV[44:63]]
 test_data = training_data[DATES_HOLDOUT]
 
 NSDF = 6
 
 step.mod <- function(data, ...){
-  # naive_model = lm(response ~ county + ns(date_idx, df=NSDF), data=data);
-  naive_model = lm(response ~ county, data=data);
+  naive_model = lm(response ~ county*ns(date_idx, df=NSDF), data=data);
   fit_step = stats::step(
     object=naive_model,
     scope=as.formula(
@@ -47,7 +44,7 @@ lapply(1:nrow(grid_lag), function(j){
   cat(' - tune number: ', j, '/', nrow(grid_lag), '\n')
   
   cols_active = c("response", 
-                  paste0("response", 1:grid_lag$lag[j]), 
+                  #paste0("response", 1:grid_lag$lag[j]), 
                   CONT_COLNAMES, 
                   "county", 
                   "date_idx", 
@@ -91,17 +88,23 @@ lapply(1:nrow(grid_lag), function(j){
 
 
 # PRUNE THE STEPWISE FIT
-LAG_TUNED = 31
 COLS_ACTIVE = c("response", 
-                paste0("response", 1:LAG_TUNED), 
+                # paste0("response", 1:LAG_TUNED), 
                 CONT_COLNAMES, 
                 "county", 
                 "date_idx", 
                 do.call('paste0', expand.grid(CONT_COLNAMES, 1:10)))
-# full_formula = attr(tune_step[[1]], "formula")
-full_formula = readRDS("./isaac_ar/objects/step_formula.RDS")
+full_formula = attr(tune_step[[1]], "formula")
+# full_formula = readRDS("./isaac_ar/objects/step_formula.RDS")
+full_formula = c(
+  -99, 
+  -99,
+  "hospital.admissions_smoothed_adj_covid19_from_claims9 + safegraph_part_time_work_prop_7dav + doctor.visits_smoothed_adj_cli10"
+  )
+
 step_order = str_split(full_formula[3], " \\+ ")[[1]]
-grid2 = data.frame(K = seq(10, 80, 10)) # + 2 for guaranteed columns
+grid2 = data.frame(K = 1:length(step_order)) # + 2 for guaranteed columns
+LAG_TUNED = 31  # grid_results$lag[1]
 
 lapply(1:nrow(grid2), function(j){
   cat(' - tune number: ', j, '/', nrow(grid2), '\n')
@@ -137,22 +140,14 @@ lapply(1:nrow(grid2), function(j){
       # it's fixed
       formula=as.formula(paste0(
         "response ~ ",
-        paste0(step_order[1:2], collapse=" * "),
-        " + ",
-        paste0(step_order[3:K], collapse = ' + ')
+        paste0(step_order[1:K], collapse = ' + ')
         )
       )
     ) 
     result %>%
       mutate(fold_idx = i, 
              date = names(dev_data)[i], 
-             model_formula = paste0(
-               "response ~ ",
-               paste0(step_order[1:2], collapse=" * "),
-               " + ",
-               paste0(step_order[3:K], collapse = ' + ')
-             )
-             )
+             model_formula = paste0("response ~ ", paste0(step_order[1:K], collapse = ' + ')))
     
   }) %>%
     `names<-`(names(dev_data)) -> fold_result
