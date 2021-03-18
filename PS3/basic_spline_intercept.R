@@ -42,27 +42,26 @@ lapply(1:nrow(grid_df), function(j){
       # we will scale these continuous column names
       scale_cols=CONT_COLNAMES,
       # the formula to be used
-      formula=as.formula(paste0("response ~ county:ns(date_idx, df=", 
+      formula=as.formula(paste0("response ~ . +ns(date_idx, df=", 
                                 as.character(deg_free), ")"))
     )
-
+    
     result %>%
       mutate(fold_idx = i) # for filtering purposes later
   }) %>%
     `names<-`(names(dev_data)) -> fold_result
-}) -> result_county_spline
+}) -> result_intercept_spline
 
 # extract FV results
-grid_results = extract_folds_outer(result_county_spline, grid_df, yhat_cols = "yhat", collapse_func=score_loss) %>% 
+grid_results = extract_folds_outer(result_intercept_spline, grid_df, yhat_cols = "yhat", collapse_func=score_loss) %>% 
   group_by(df) %>%
   summarise(loss = mean(loss)) %>% 
   arrange(loss)
 
 
-
 # Testing on November data
 
-# df=20 was selected
+# df=7 was selected
 
 lapply(1:length(test_data), function(i){
   # extract training and prediction data for that fold
@@ -80,13 +79,13 @@ lapply(1:length(test_data), function(i){
     # we will scale these continuous column names
     scale_cols=CONT_COLNAMES,
     # the formula to be used
-    formula=as.formula(response ~ . +ns(date_idx, df=20))
+    formula=as.formula(response ~ . +ns(date_idx, df=7))
   )
   
   result %>%
     mutate(fold_idx = i) # for filtering purposes later
 }) %>%
-  `names<-`(names(test_data)) -> fold_result -> result_county_spline_test
+  `names<-`(names(test_data)) -> fold_result -> result_intercept_spline_test
 
 
 

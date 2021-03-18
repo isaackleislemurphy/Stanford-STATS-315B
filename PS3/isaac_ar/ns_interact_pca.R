@@ -153,8 +153,8 @@ NSDF = 6
 # use the best tune to make predictions
 lapply(1:length(test_data), function(i){
   # extract training and prediction data for that fold
-  decomp = prcomp(test_data[[i]][[1]][, CONT_COLNAMES], rank = NCOMP, scale. = T, center = T);
-  train_df = cbind(data.frame(decomp$x), test_data[[i]][[1]][, c("county", "response", "date_idx")]);
+  decomp = prcomp(test_data[[1]][[1]][, CONT_COLNAMES], rank = NCOMP, scale. = T, center = T);
+  train_df = cbind(data.frame(decomp$x), test_data[[1]][[1]][, c("county", "response", "date_idx")]);
   
   predict_df = cbind(
     predict(object=decomp, newdata = test_data[[i]][[2]]),
@@ -172,7 +172,7 @@ lapply(1:length(test_data), function(i){
     # we will scale these continuous column names
     scale_cols=setdiff(colnames(train_df), c("response", "county", "date_idx")),
     # the formula to be used
-    formula=as.formula(paste0("response ~ county + ns(date_idx, df=", as.character(NSDF), ") + ", paste0("PC", 1:NCOMP, collapse=' + ')))
+    formula=as.formula(paste0("response ~ county * ns(date_idx, df=", as.character(NSDF), ") + ", paste0("PC", 1:NCOMP, collapse=' + ')))
   ) 
   result %>%
     mutate(fold_idx = i) # for filtering purposes later
