@@ -8,11 +8,11 @@ age_df <- read.csv("/Users/kaiokada/Desktop/Stanford/Q3/STATS315B/HW1/age_stats3
 age_df <- sapply(age_df, as.factor)
 age_df <- transform(age_df, 
                     age = as.numeric(age), 
-                    Edu = as.numeric(Edu),
-                    Income = as.numeric(Income),
-                    LiveBA = as.numeric(LiveBA),
-                    Persons = as.numeric(Persons),
-                    Under18 = as.numeric(Under18))
+                    Edu = factor(Edu, ordered=TRUE, c(1, 2, 3, 4, 5, 6)),
+                    Income = factor(Income, ordered=TRUE, c(1, 2, 3, 4, 5, 6, 7, 8, 9)),
+                    LiveBA = factor(LiveBA, ordered=TRUE, c(1, 2, 3, 4, 5)),
+                    Persons = factor(Persons, ordered=TRUE, c(1,2,3,4,5,6,7,8,9)),
+                    Under18 = factor(Under18, ordered=TRUE, c(0,1,2,3,4,5,6,7,8,9)))
 age_df
 
 # split the dataset
@@ -57,6 +57,7 @@ for (i in 1:nrow(tune_grid)) {
   }
 }
 
+# Apply best hyperparams obtained.
 fit.rpart_best <- rpart(age ~ ., train_data, method = "anova", 
                         control=rpart.control(
                           cp = tune_grid$cp[best_grid_row],
@@ -69,8 +70,16 @@ yhat_test <- rpart.predict(fit.rpart_large, test_data)
 ytrue <- test_data$age
 mse_test <- mean((yhat_test - ytrue)^2)
 tune_grid[best_grid_row,]
+plot(fit.rpart_best)
+fit.rpart_snipped <- snip.rpart(fit.rpart_best)
+rpart.plot(fit.rpart_snipped, type = 3, clip.right.labs = FALSE, branch = .3, under = TRUE)
 
-fit.rpart_small <- snip.rpart(fit.rpart_best, toss=5)
-rpart.plot(fit.rpart_small)
-rpost(fit.rpart_small, "Regression Tree to Predict Age", filename="rpart_result.ps")
-rpart.plot::prp(fit.rpart_best, snip = TRUE)
+# Look at specifically optimal CP and number of splits within CP table.
+min_xerror_idx <- which.min(fit.rpart_best$cptable[,"xerror"])
+fit.rpart_best$cptable[min_xerror_idx,]
+
+plot(fit.rpart_best)
+fit.rpart_snipped2 <- snip.rpart(fit.rpart_best)
+rpart.plot(fit.rpart_snipped2, type = 3, clip.right.labs = FALSE, branch = .3, under = TRUE)
+
+
