@@ -1,10 +1,14 @@
 library(dplyr)
 library(rpart)
-library(testit)
+library(rpart.plot)
 
 # ingest data
+# data = read.csv("~/Downloads/housetype_stats315B.csv") %>%
+#   mutate_all(., as.factor)
+CAT_COLNAMES = c("TypeHome", "sex", "MarStat", "Occup", "DualInc", "HouseStat", "Ethnic", "Lang")
 data = read.csv("~/Downloads/housetype_stats315B.csv") %>%
-  mutate_all(., as.factor)
+  mutate_at(CAT_COLNAMES, as.factor) %>%
+  mutate_at(setdiff(colnames(.), CAT_COLNAMES), as.numeric)
 
 # apportion data
 set.seed(2020)
@@ -84,6 +88,7 @@ model_fit = rpart(
   maxdepth=best_params$maxdepth,
   minsplit=best_params$minsplit
 )
+
 
 # make predictions and calculate misclass rate
 yhat = predict(model_fit, newdata=test_data, type="class")
