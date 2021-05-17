@@ -1,0 +1,145 @@
+---
+title: "Untitled"
+author: "Isaac Kleisle-Murphy"
+date: "5/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+First we load the data, and partition into a train and test set
+```{r}
+library(gbm)
+ca_data = read.csv("~/Downloads/calif_stats315B.csv", 
+                   col.names=c("Y", "median_income", "housing_median_age", "avg_num_rooms", "avg_num_bedrooms", "population", "avg_occupancy", "lat", "long")
+                   # col.names = c("Y", paste0("X", 1:8))
+                   )
+
+set.seed(2020)
+train_slice = sample(1:nrow(ca_data), as.integer(.8 * nrow(ca_data)), replace=F)
+test_slice = setdiff(1:nrow(ca_data), train_slice)
+
+data_train = ca_data[train_slice, ]
+data_test = ca_data[test_slice, ]
+
+NTREE = 1000
+
+tunegrid = expand.grid(
+  interaction.depth=c(1, 2, 5, 10),
+  shrinkage=c(.1, .01, .001),
+  bag.fraction=c(.25, .5)
+)
+
+lapply(1:nrow(tunegrid), function(i){
+  tune_settings = tunegrid[i, ]
+  mod = gbm(Y ~ ., 
+            data = data_train, 
+            cv.folds=5, 
+            n.trees=NTREE, 
+            interaction.depth = tune_settings$interaction.depth,
+            shrinkage = tune_settings$shrinkage,
+            bag.fraction = tune_settings$bag.fraction)
+  cv_score = min(mod$cv.error)
+  cv_ntree = which.min(mod$cv.error)
+  c(cv_score, cv_ntree)
+}) %>%
+  do.call("rbind", .) %>%
+  data.frame() %>%
+  `colnames<-`(c("cv_loss", "n.trees")) -> cv_results
+cv_results = bind_cols(tunegrid, cv_results)
+
+# extract
+best_tune = cv_results %>% 
+  arrange(cv_loss) %>%
+  head(1)
+
+print(best_tune)
+# fit full model
+mod = gbm(
+  Y~.,
+  data=data_train,
+  n.trees=best_tune$n.trees,
+  interaction.depth = best_tune$interaction.depth,
+  shrinkage = best_tune$shrinkage,
+  bag.fraction = best_tune$bag.fraction
+)
+
+# predict
+yhat = predict(mod, newdata=data_test)
+cat("************************************\nTest Set Results \n************************************\n")
+cat('Mean Squared Error: ', mean((yhat - data_test$Y)^2), "\n")
+cat('Mean Absolute Error: ', mean(abs(yhat - data_test$Y)), "\n")
+cat('Pearson Correlation: ', cor(yhat, data_test$Y, method='pearson'), "\n")
+cat('Spearman Correlation: ', cor(yhat, data_test$Y, method='spearman'), "\n")
+```
+
+We next plot two measures of variable impotance. First is the relative influence, which follows from average MSE improvement contributed by each split over all the trees/base-learners. According to this measure of importance, median income is far and away the most important predictor. A good distance back and of mild importance are average occupancy and lat/long, while the remaining features are of minor importance according to this importance measure. 
+```{r}
+summary(
+  mod, 
+  cBars = 8,
+  method = relative.influence,
+  las=2
+  )
+```
+
+Second is the permutation test influence, which shuffles the values of each feature, captures the change in MSE as a result of that shuffle, and then uses that change as a measure of importance (i.e. those variables that when unshuffled, decrease MSE most are most important). According to this measure, lat/long are far and away the most important, with median income, average occupancy, and average number of rooms of lesser but not insignificant importance. Median age, average bedrooms, and population are all of minimal importance. 
+```{r}
+summary(
+  mod, 
+  cBars = 8,
+  method = permutation.test.gbm,
+  las=2
+  )
+```
+
+Next, we plot dependencies. The first batch of partial dependence plots are single variables.  
+```{r}
+plot.gbm(mod, i.var="median_income")
+```
+
+Here, we see the response increase almost linearly with increases in median income, until median income hits approximately 10. At that point, the response levels off, and sits around 3.6. This indicates that median income is helpful to a point, though at some threshold, the respondent is so rich that income itself does not matter and other features are more important. 
+
+```{r}
+plot.gbm(mod, i.var="lat")
+```
+
+```{r}
+plot.gbm(mod, i.var="long")
+```
+
+Meanwhile, latitude and longitude show approximately linear decline as both increase. I think longitude has been negated in the dataset (as San Francisco is ~ 37/122, as opposed to 37/-122 here) -- this suggests that as you move northeast across the state, median house value declines. This aligns with common sense. 
+
+```{r}
+plot.gbm(mod, i.var="avg_occupancy")
+```
+
+Next, we see a sharp cut on average occupancy. In this way, it almost serves as a thresholding/indicator function, wherein zero occupancy corresponds to greater home value (perhaps more expensive apartments in "desirable"" cities like SF, LA, or SD), followed by a sharp drop as occupancy increases (perhaps more suburban/inland homes have lower values on account of location, but more space?). 
+
+```{r}
+plot.gbm(mod, i.var="avg_num_rooms")
+```
+
+And for rooms, the more rooms you have, the more mansion-like the house probably is, so as expected median value increases (up to a certain point, where it levels off). 
+
+Next, we proceed to pairwise partial dependence plots. A natural pairing is the lat/long dependence, which gives:
+```{r}
+plot.gbm(mod, i.var=c("long", "lat"))
+```
+
+Again, the general southwest direction across the state corresponds to higher median home values -- this we expected from above. Furthermore, if we pair average number of rooms and average number of bedrooms, we see
+
+```{r}
+plot.gbm(mod, i.var=c("avg_num_rooms", "avg_num_bedrooms"))
+```
+
+The pairwise plot really just reflects the two marginal plots above -- nothing too interesting here. Finally, for fun, we look at median income vs. population (admittedly, housing median age is not a wildly important feature, by the two importance measures above), and see:
+
+```{r}
+plot.gbm(mod, i.var=c("median_income", "housing_median_age"))
+```
+
+Again, there's not a whole lot interesting about this plot: as one would expect, home value increases with median income, and to a much lesser extent with age. The noteable find here is that areas with high median incomes but low age (green in the bottom right) show high, but not extremely high, median home values. One explanation here might be that many of these high-earning young people have simply yet to buy an expensive home. Alternatively, perhaps this might result from areas where parents are wealthy, but there are many kids in each household. Here, parents might opt for less expensive/top-end housing, in anticipation of the cost of raising all of these children. 
