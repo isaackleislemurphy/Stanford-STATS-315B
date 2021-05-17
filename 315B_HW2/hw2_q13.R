@@ -23,7 +23,7 @@ age_df <- transform(age_df,
                     
 age_df
 # split the dataset
-set.seed(2020)
+set.seed(2021)
 train_rows <- sample(1:nrow(age_df), size = as.integer(nrow(age_df) * 0.7)) # 70% training
 eval_rows <- setdiff(1:nrow(age_df), train_rows)
 val_rows <- sample(eval_rows, size = as.integer(length(eval_rows) * 0.5)) # 15% dev
@@ -49,6 +49,7 @@ min_error = 10000.0
 # Fit the tree, find the best parameters
 for (i in 1:nrow(tune_grid2)) {
   cat("-")
+  set.seed(2021)
   fit.gbm <- gbm(age~.,
                  data=train_data,
                  train.fraction=1,
@@ -72,6 +73,7 @@ for (i in 1:nrow(tune_grid2)) {
 tune_grid2[best_grid_row,]
 
 # Apply best hyperparams obtained.
+set.seed(2021)
 fit.gbm.best <- gbm(age~.,data=train_data,
                     train.fraction=1,
                     interaction.depth=tune_grid2$interaction.depth[best_grid_row],
@@ -83,8 +85,10 @@ fit.gbm.best <- gbm(age~.,data=train_data,
                     verbose=T)
 
 best.iter <- gbm.perf(fit.gbm.best, method="cv")
+best.iter
 yhat_test <- predict(fit.gbm.best, test_data, type="response", n.trees=best.iter)
 
 ytrue <- test_data$age
 mse_test <- mean((yhat_test - ytrue)^2)
 summary(fit.gbm.best,main="RELATIVE INFLUENCE OF ALL PREDICTORS")
+mse_test

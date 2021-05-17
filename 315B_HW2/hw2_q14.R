@@ -2,15 +2,18 @@
 library(dplyr)
 library(gbm)
 
-age_df <- read.csv("/Users/kaiokada/Desktop/Stanford/Q3/STATS315B/HW1/age_stats315B.csv")
-age_df <- sapply(age_df, as.numeric)
-age_df <- transform(age_df, 
+occup_df <- read.csv("/Users/kaiokada/Desktop/Stanford/Q3/STATS315B/github/Stanford-STATS-315B/315B_HW2/occup_stats315B.csv", header=FALSE)
+occup_df <- sapply(occup_df, as.numeric)
+colnames(occup_df) <- c("Occup", "TypeHome", "sex", "MarStat", "age", 
+                     "Edu", "Income", "LiveBA", "DualInc", "Persons",
+                     "Under18", "HouseStat", "Ethnic", "Lang")
+occup_df <- transform(occup_df, 
                     age = as.numeric(age), 
-                    Edu = factor(Edu, ordered=TRUE, c(1, 2, 3, 4, 5, 6)),
-                    Income = factor(Income, ordered=TRUE, c(1, 2, 3, 4, 5, 6, 7, 8, 9)),
-                    LiveBA = factor(LiveBA, ordered=TRUE, c(1, 2, 3, 4, 5)),
-                    Persons = factor(Persons, ordered=TRUE, c(1,2,3,4,5,6,7,8,9)),
-                    Under18 = factor(Under18, ordered=TRUE, c(0,1,2,3,4,5,6,7,8,9)),
+                    Edu = as.numeric(Edu),
+                    Income = as.numeric(Income),
+                    LiveBA = as.numeric(LiveBA),
+                    Persons = as.numeric(Persons),
+                    Under18 = as.numeric(Under18),
                     Occup = factor(Occup),
                     TypeHome = factor(TypeHome),
                     sex = factor(sex),
@@ -19,27 +22,25 @@ age_df <- transform(age_df,
                     DualInc = factor(DualInc),
                     Ethnic = factor(Ethnic),
                     Lang = factor(Lang))
-
-
-age_df
+occup_df
 # split the dataset
-set.seed(2020)
-train_rows <- sample(1:nrow(age_df), size = as.integer(nrow(age_df) * 0.7)) # 70% training
-eval_rows <- setdiff(1:nrow(age_df), train_rows)
+set.seed(2021)
+train_rows <- sample(1:nrow(occup_df), size = as.integer(nrow(age_df) * 0.7)) # 70% training
+eval_rows <- setdiff(1:nrow(occup_df), train_rows)
 val_rows <- sample(eval_rows, size = as.integer(length(eval_rows) * 0.5)) # 15% dev
 test_rows <- setdiff(eval_rows, val_rows)
 
-train_data <- age_df[train_rows,]
-val_data <- age_df[val_rows,]
-test_data <- age_df[test_rows,]
+train_data <- occup_df[train_rows,]
+val_data <- occup_df[val_rows,]
+test_data <- occup_df[test_rows,]
 
 # Hyperparameter tuning:
 tune_grid = expand.grid(
   interaction.depth=c(2, 4, 6),
-  shrinkage=c(0.01, 0.05, 0.10, 0.15)
+  shrinkage=c(0.05, 0.10, 0.15)
 )
 tune_grid2 = expand.grid(
-  interaction.depth=c(6, 8, 10),
+  interaction.depth=c(2),
   shrinkage=c(0.0, 0.005, 0.01)
 )
 
@@ -49,7 +50,8 @@ min_error = 10000.0
 # Fit the tree, find the best parameters
 for (i in 1:nrow(tune_grid2)) {
   cat("-")
-  fit.gbm <- gbm(age~.,
+  set.seed(2021)
+  fit.gbm <- gbm(Occup~.,
                  data=train_data,
                  train.fraction=1,
                  interaction.depth=tune_grid2$interaction.depth[i],
@@ -57,34 +59,43 @@ for (i in 1:nrow(tune_grid2)) {
                  n.trees=2500,
                  bag.fraction=0.5,
                  cv.folds=5,
-                 distribution="gaussian",
+                 distribution="multinomial",
                  verbose=F)
   best.iter <- gbm.perf(fit.gbm,method="cv")
-  yhat <- predict(fit.gbm, val_data, type="response", n.trees=best.iter)
-  ytrue <- val_data$age
-  mse <- mean((yhat - ytrue)^2)
-  if (mse < min_error) {
-    min_error = mse
+  phat <- predict(fit.gbm, val_data, type="response", n.trees=best.iter)
+  yhat <- apply(phat, MARGIN=1, FUN=function(x) which.max(x))
+  ytrue <- val_data$Occup
+  misclass <- mean(yhat != ytrue)
+  if (misclass < min_error) {
+    min_error = misclass
     best_grid_row = i
   }
 }
-
+min_error
 tune_grid2[best_grid_row,]
 
 # Apply best hyperparams obtained.
-fit.gbm.best <- gbm(age~.,data=train_data,
+set.seed(2021)
+fit.gbm.best <- gbm(Occup~.,data=train_data,
                     train.fraction=1,
                     interaction.depth=tune_grid2$interaction.depth[best_grid_row],
                     shrinkage=tune_grid2$shrinkage[best_grid_row],
                     n.trees=2500,
                     bag.fraction=0.5,
                     cv.folds=5,
-                    distribution="gaussian",
+                    distribution="multinomial",
                     verbose=T)
 
 best.iter <- gbm.perf(fit.gbm.best, method="cv")
-yhat_test <- predict(fit.gbm.best, test_data, type="response", n.trees=best.iter)
+best.iter
+phat_test <- predict(fit.gbm.best, test_data, type="response", n.trees=best.iter)
+yhat_test <- apply(phat_test, MARGIN=1, FUN=function(x) which.max(x))
+ytrue <- test_data$Occup
+misclass_test <- mean(yhat_test != ytrue)
+misclass_test
 
-ytrue <- test_data$age
-mse_test <- mean((yhat_test - ytrue)^2)
+# Find misclassification rate per occupation
+levels(ytrue)
+k_misclass = sapply(levels(ytrue), function(x) mean(yhat_test[ytrue == as.numeric(x)] != as.numeric(x)))
+k_misclass
 summary(fit.gbm.best,main="RELATIVE INFLUENCE OF ALL PREDICTORS")
