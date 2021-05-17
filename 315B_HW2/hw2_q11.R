@@ -17,10 +17,10 @@ library(gbm)
 # Reading in the dataset --------------------------------------------------
 
 # Training Data
-spam_train_df<- read.csv("spam_stats315B_train.csv")
+spam_train_df<- read.csv("spam_stats315B_train.csv", header = FALSE)
 
 # Test Data
-spam_test_df<-read.csv("spam_stats315B_test.csv")
+spam_test_df<-read.csv("spam_stats315B_test.csv", header=FALSE)
 
 
 
@@ -53,7 +53,7 @@ set.seed(444)
 
 gbm0<-gbm(type~.,data=train_data,train.fraction=0.8,interaction.depth=4,
           shrinkage=.05,n.trees=2500,bag.fraction=0.5,cv.folds=5,
-          distribution="bernoulli",verbose=T)
+          distribution="bernoulli",verbose=T, n.cores=1)
 
 
 
