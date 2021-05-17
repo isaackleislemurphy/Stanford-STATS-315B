@@ -93,7 +93,13 @@ With a split of 70% of the spam_stats315B_train.csv for training and 30% for val
 
 
 ## Part b)
-We want to lower the non-spam misclassification rate to be less than $0.3\%$. Since the gbm package and function do not allow us to modify the cost matrix directly, we try a few combinations of different threshold values (other than 0.5) for classification, as well as different weights for the spam and non-spam emails to achieve the required rate. If we simply modify the threshold value, it was observed that having a threshold of $0.988$ was the smallest threshold value that gave us a non-spam misclassification rate of less than $0.3\%$. However, with this approach, we got the overall misclassification rate to be $15.42\%$. The exact misclassification rate for non-spam email was $0.22\%$, and the misclassification rate for spam emails was $37.37\%$. So then we wrote a function to try a different threshold value but also a series of different weight values for spam and non-spam emails to reach the required non-spam misclassification rate while trying to keep the overall misclassification rate low. With the smallest value of the weight of $400$ for non-spam and $10$ for spam, and a threshold value of $0.75$, we got a non-spam misclassification rate of $0.22\%$, a spam misclassification rate of $14.47\%$, and an overall misclassification rate of $35.60 \%$. We went ahead with this model. With regards to the important variables for discriminating good emails from spam emails, the five variables with the highest relative influence values are "`$`", "`!`", "remove", "hp", and "free", which make intuitive sense. To see the dependence of the response on the two most important variables "`$`" and "`!`", we created a partial dependence plot and see that there is indeed a strong interaction between "$" and "!". 
+We want to lower the non-spam misclassification rate to be less than $0.3\%$. Since the gbm package and function do not allow us to modify the cost matrix directly, we try a few combinations of different threshold values (other than 0.5) for classification, as well as different weights for the spam and non-spam emails to achieve the required rate. If we simply modify the threshold value, it was observed that having a threshold of $0.988$ was the smallest threshold value that gave us a non-spam misclassification rate of less than $0.3\%$. However, with this approach, we got the overall misclassification rate to be $15.42\%$. The exact misclassification rate for non-spam email was $0.22\%$, and the misclassification rate for spam emails was $37.37\%$. So then we wrote a function to try a different threshold value but also a series of different weight values for spam and non-spam emails to reach the required non-spam misclassification rate while trying to keep the overall misclassification rate low. \\
+
+i) With the smallest value of the weight of $400$ for non-spam and $10$ for spam, and a threshold value of $0.75$, we got a non-spam misclassification rate of $0.22\%$, a spam misclassification rate of $14.47\%$, and an overall misclassification rate of $35.60 \%$. We went ahead with this model. 
+
+ii) With regards to the important variables for discriminating good emails from spam emails, the five variables with the highest relative influence values are "`$`", "`!`", "remove", "hp", and "free", which make intuitive sense. \\
+
+iii) To see the dependence of the response on the two most important variables "`$`" and "`!`", we created a partial dependence plot and see that there is indeed a strong interaction between "\$" and "!", i.e. individually, the two variables "\$" and "!" are not strong signals for a mail being spam, however, their appearance together is a strong signal for the mail being spam. 
 
 
 ```{r}
@@ -202,7 +208,7 @@ errors$misclass.notspam
 ```
 
 
-```{r}
+```{r include=FALSE, echo=TRUE}
 set.seed(2021)
 gbm_best<-gbm(type~.,data=spam_train_df,
             train.fraction=0.8,
@@ -214,7 +220,7 @@ summary(gbm_best,main="RELATIVE INFLUENCE OF ALL PREDICTORS")
 ```
 
 
-```{r}
+```{r include=FALSE, echo=TRUE}
 # 53 and 52 correspond to the two variables with the highest relative influence values
 print(gbm_best)
 best.iter<-gbm.perf(gbm_best,plot.it = FALSE, method="cv")
