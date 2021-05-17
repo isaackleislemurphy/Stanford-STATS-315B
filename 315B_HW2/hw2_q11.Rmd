@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 library(dplyr)
 library(gbm)
+library(viridis)
 
 ```
 
@@ -18,10 +19,10 @@ library(gbm)
 # Reading in the dataset
 
 # Training Data
-spam_train_df<- read.csv("spam_stats315B_train.csv", header = FALSE)
+spam_train_df<- read.csv("/Users/kaiokada/Desktop/Stanford/Q3/STATS315B/spam_stats315B_train.csv", header = FALSE)
 
 # Test Data
-spam_test_df<-read.csv("spam_stats315B_test.csv", header=FALSE)
+spam_test_df<-read.csv("/Users/kaiokada/Desktop/Stanford/Q3/STATS315B/spam_stats315B_test.csv", header=FALSE)
 
 
 # basic data pre-processing
@@ -34,7 +35,7 @@ rflabs<-c("make", "address", "all", "3d", "our", "over", "remove","internet",
           "business","email", "you", "credit", "your", "font","000","money","hp", "hpl", 
           "george", "650", "lab", "labs","telnet", "857", "data", "415", "85", "technology", 
           "1999","parts","pm", "direct", "cs", "meeting", "original", "project","re","edu", 
-          "table", "conference", ";", "(", "[", "!", "$", "#","CAPAVE", "CAPMAX", "CAPTOT","type")
+          "table", "conference", "semicolon", "open_paren", "open_bracket", "exclamation_pt", "dollar_sign", "#","CAPAVE", "CAPMAX", "CAPTOT","type")
 colnames(spam_train_df)<-rflabs
 colnames(spam_test_df)<-rflabs
 
@@ -55,7 +56,7 @@ val_data <- spam_train_df[val_rows,]
 gbm0<-gbm(type~.,data=train_data,train.fraction=0.8,
           interaction.depth=4,shrinkage=.05,
           n.trees=2500,bag.fraction=0.5,
-          cv.folds=5,distribution="bernoulli",verbose=F, n.cores=1)
+          cv.folds=5,distribution="bernoulli",verbose=F)
 
 # Getting the best iteration and prediction from the best iteration
 best.iter <- gbm.perf(gbm0,method="cv")
@@ -88,11 +89,11 @@ misclass.notspam
 ```
 
 ## Part a)
-With a split of 70% of the spam_stats315B_train.csv for training and 30% for validation (we do not perform hyperparameter tuning over a grid of parameters however, use the validation set to obtain an estimate of the misclassification rate), we get an estimate of $4.67 \%$.  The test set misclassification rate obtained is $4.04 \%$. Within the test set, of all the spam emails, $4.69%$ were misclassified, whereas, of all non-spam or "good" emails, $3.60\%$ were misclassified. 
+With a split of 70% of the spam_stats315B_train.csv for training and 30% for validation (we do not perform hyperparameter tuning over a grid of parameters however, use the validation set to obtain an estimate of the misclassification rate), we get an estimate of $4.77 \%$.  The test set misclassification rate obtained is $4.04 \%$. Within the test set, of all the spam emails, $4.69 \%$ were misclassified, whereas, of all non-spam or "good" emails, $3.60\%$ were misclassified. 
 
 
 ## Part b)
-We want to lower the non-spam misclassification rate to be less than $0.3\%$. Since the gbm package and function do not allow us to modify the cost matrix directly, we try a few combinations of different threshold values (other than 0.5) for classification, as well as different weights for the spam and non-spam emails to achieve the required rate. If we simply modify the threshold value, it was observed that having a threshold of $0.983$ was the smallest threshold value that gave us a non-spam misclassification rate of less than $0.3\%$. However, with this approach, we got the overall misclassification rate to be $15.45\%$. The exact misclassification rate for non-spam email was $0.22\%$, and the misclassification rate for spam emails was $38.03\%$. So then we wrote a function to try a different threshold value but also a series of different weight values for spam and non-spam emails to reach the required non-spam misclassification rate while trying to keep the overall misclassification rate low. With the smallest value of the weight of $400$ for non-spam and $10$ for spam, and a threshold value of $0.75$, we got a non-spam misclassification rate of $0.22\%$, a spam misclassification rate of $14.47\%$, and an overall misclassification rate of $35.60 \%$. We went ahead with this model. With regards to the important variables for discriminating good emails from spam emails, the five variables with the highest relative influence values are "$", "!", "remove", "hp", and "free", which make intuitive sense. To see the dependence of the response on the two most important variables "$" and $!$, we created a partial dependence plot and see that there is indeed a strong interaction between "$" and "!". 
+We want to lower the non-spam misclassification rate to be less than $0.3\%$. Since the gbm package and function do not allow us to modify the cost matrix directly, we try a few combinations of different threshold values (other than 0.5) for classification, as well as different weights for the spam and non-spam emails to achieve the required rate. If we simply modify the threshold value, it was observed that having a threshold of $0.988$ was the smallest threshold value that gave us a non-spam misclassification rate of less than $0.3\%$. However, with this approach, we got the overall misclassification rate to be $15.42\%$. The exact misclassification rate for non-spam email was $0.22\%$, and the misclassification rate for spam emails was $37.37\%$. So then we wrote a function to try a different threshold value but also a series of different weight values for spam and non-spam emails to reach the required non-spam misclassification rate while trying to keep the overall misclassification rate low. With the smallest value of the weight of $400$ for non-spam and $10$ for spam, and a threshold value of $0.75$, we got a non-spam misclassification rate of $0.22\%$, a spam misclassification rate of $14.47\%$, and an overall misclassification rate of $35.60 \%$. We went ahead with this model. With regards to the important variables for discriminating good emails from spam emails, the five variables with the highest relative influence values are "`$`", "`!`", "remove", "hp", and "free", which make intuitive sense. To see the dependence of the response on the two most important variables "`$`" and "`!`", we created a partial dependence plot and see that there is indeed a strong interaction between "$" and "!". 
 
 
 ```{r}
@@ -110,7 +111,7 @@ misclass.spam_series
 misclass.notspam_series
 
 # Originally threshold was found to be 0.988
-thresh <- 0.983
+thresh <- 0.988
 yhat_test <- sapply(gbm0.predict_test, FUN=function(x) if (x > thresh) 1 else 0)
 ytrue_test <- spam_test_df$type
 misclass <- mean(yhat_test != ytrue_test)
@@ -128,7 +129,7 @@ misclass.notspam
 
 # Function to try different weight values with a given threshold
 
-spam.pred.test <- function(train_data, test_data, weights, thresh, use_best = FALSE) {
+spam.pred.test <- function(train_data, test_data, weights, thresh, use_best = TRUE) {
   #' @param train_data Data frame used to fit model
   #' @param test_data Data frame used to evaluate model
   #' @param weights Weight values given to training data observations (must have same length)
@@ -140,10 +141,10 @@ spam.pred.test <- function(train_data, test_data, weights, thresh, use_best = FA
             weights=weights,
             interaction.depth=4,shrinkage=.05,
             n.trees=2500,bag.fraction=0.5,
-            cv.folds=5,distribution="bernoulli",verbose=T,n.cores=1)
+            cv.folds=5,distribution="bernoulli",verbose=F)
   gbm1.predict <- NULL
   if (use_best) {
-    best.iter <- gbm.perf(gbm1,method="cv")
+    best.iter <- gbm.perf(gbm1,plot.it = FALSE, method="cv")
     gbm1.predict<-predict(gbm1,test_data,type="response",n.trees=best.iter)
   }
   else {
@@ -167,11 +168,11 @@ spam.pred.test <- function(train_data, test_data, weights, thresh, use_best = FA
 
 misclass_weighted.overall <- c()
 misclass_weighted.notspam <- c()
-for (w in seq(100, 600, 100)) {
+for (w in seq(100, 800, 100)) {
   print(w)
   weights <- rep(1.0, nrow(spam_train_df))
   weights[which(spam_train_df$type == 0)] = w # upweight non-spam
-  weights[which(spam_train_df$type == 1)] = 10
+  weights[which(spam_train_df$type == 1)] = 5
   
   set.seed(2021)
   errors <- spam.pred.test(spam_train_df, spam_test_df, weights, thresh=0.75)
@@ -182,17 +183,19 @@ for (w in seq(100, 600, 100)) {
 }
 misclass_weighted.notspam
 misclass_weighted.overall 
+w_best <- seq(100, 800, 100)[which.min(misclass_weighted.notspam)]
+
 ```
 
 ```{r}
 
 # Applying the weights value obtained that gets us the required non-spam misclassification rate
 
-weights[which(spam_train_df$type == 0)] = 400 # upweight non-spam
+weights[which(spam_train_df$type == 0)] = w_best # upweight non-spam
 weights[which(spam_train_df$type == 1)] = 10
 
 set.seed(2021)
-errors <- spam.pred.test(spam_train_df, spam_test_df, weights, thresh=0.75, use_best=FALSE)
+errors <- spam.pred.test(spam_train_df, spam_test_df, weights, thresh=0.75)
 errors$misclass.overall
 errors$misclass.spam
 errors$misclass.notspam
@@ -200,13 +203,22 @@ errors$misclass.notspam
 
 
 ```{r}
-summary(gbm1,main="RELATIVE INFLUENCE OF ALL PREDICTORS")
+set.seed(2021)
+gbm_best<-gbm(type~.,data=spam_train_df,
+            train.fraction=0.8,
+            weights=weights,
+            interaction.depth=4,shrinkage=.05,
+            n.trees=2500,bag.fraction=0.5,
+            cv.folds=5,distribution="bernoulli",verbose=F)
+summary(gbm_best,main="RELATIVE INFLUENCE OF ALL PREDICTORS")
 ```
 
 
 ```{r}
 # 53 and 52 correspond to the two variables with the highest relative influence values
+print(gbm_best)
+best.iter<-gbm.perf(gbm_best,plot.it = FALSE, method="cv")
+plot(gbm_best,c(52,53),best.iter,ylim=c(0,3),main="Partial Dependence on '!' and '$'")
 
-plot(x=gbm1,c(53,52),best.iter,ylim=c(0,3),main="Partial Dependence on ’$’ and ’!’ ")
 ```
 
