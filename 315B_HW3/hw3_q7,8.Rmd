@@ -1,0 +1,16 @@
+---
+title: "HW3 Q7,8"
+author: "Muhammad Ahmed Chaudhry"
+date: "5/31/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Question 7
+
+
+
+# Question 8 
