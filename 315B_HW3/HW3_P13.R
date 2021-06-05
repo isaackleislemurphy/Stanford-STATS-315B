@@ -1,0 +1,106 @@
+
+# Setup -------------------------------------------------------------------
+
+library(nnet)
+library(dplyr)
+library(ggplot2)
+
+df_train = read.csv("~/Downloads/spam_stats315B_train.csv", col.names=paste0("X", 1:58))
+df_test = read.csv("~/Downloads/spam_stats315B_test.csv", col.names=paste0("X", 1:58))
+
+set.seed(2020)
+NDEV = 1000
+P = ncol(df_train) - 1; N = nrow(df_train)
+slc = sample(1:nrow(df_train), NDEV)
+
+# scale the data
+scaler = scale(df_train[, 1:P])
+df_train_sc = df_train; df_test_sc = df_test
+df_train_sc[, 1:P] = scale(df_train_sc[, 1:P], center=attr(scaler, "scaled:center"), scale=attr(scaler, "scaled:scale")) 
+df_test_sc[, 1:P] = scale(df_test_sc[, 1:P], center=attr(scaler, "scaled:center"), scale=attr(scaler, "scaled:scale")) 
+
+# apportion dev set(s)
+df_tune_sc = df_train_sc[-slc, ]
+df_dev_sc = df_train_sc[slc, ][1:(NDEV/2), ]
+df_dev2_sc = df_train_sc[slc, ][(NDEV/2+1):NDEV, ]
+
+
+# 13A ---------------------------------------------------------------------
+
+sapply(1:10, function(n_units){
+  model = nnet.formula(X58 ~ ., data=df_train_sc, maxit=1e5, size=n_units, trace=F, rang=.5);
+  yhat = round(predict(model, newdata=df_test_sc))
+  acc = mean(yhat == df_test_sc$X58)
+  acc
+}) -> unit_tune
+
+N_LAYERS = which.max(unit_tune)
+
+
+# 13B ---------------------------------------------------------------------
+
+sapply(seq(0, 1, .1), function(dec){
+  acc_avg = c()
+  for (i in 1:10){
+    model = nnet.formula(X58 ~ ., data=df_train_sc, maxit=1e5, size=N_LAYERS, trace=F, decay=dec, rang=.5);
+    yhat = round(predict(model, newdata=df_test_sc))
+    acc = mean(yhat == df_test_sc$X58)
+    acc_avg = c(acc_avg, acc)
+  }
+  mean(acc_avg)
+}) -> decay_tune
+
+DECAY = seq(0, 1, .1)[which.max(decay_tune)]
+
+
+# 13C ---------------------------------------------------------------------
+
+# setup a full grid
+
+grd = expand.grid(
+  size=c(7, 10, 15),
+  decay=seq(.05, .25, .05),
+  skip=c(T)
+)
+
+lapply(1:nrow(grd), function(i){
+  cat('Tune: ', i, '/', nrow(grd), '\n')
+  tune_settings = grd[i, ];
+  acc_good_avg = c()
+  acc_avg = c()
+  pi_matrix = list()
+  for (j in 1:10){
+    model = nnet.formula(X58 ~ ., 
+                         data=df_train_sc, 
+                         maxit=1e5, 
+                         size=tune_settings$size, 
+                         trace=F, 
+                         decay=tune_settings$decay,
+                         skip=tune_settings$skip,
+                         rang=.5
+    );
+    pi_matrix[[j]] = as.numeric(predict(model, newdata=df_test_sc))
+    # yhat = round(predict(model, newdata=df_test_sc));
+    # acc_good = mean(yhat[df_test_sc$X58 == 0] == 0)
+    # acc = mean(yhat == df_test_sc$X58);
+    # acc_avg = c(acc_avg, acc)
+    # acc_good_avg = c(acc_good_avg, acc_good)
+  }
+  pi_matrix_ = do.call("rbind", pi_matrix) %>% colMeans()
+  lapply(seq(.05, .95, .01), function(c){
+    yhat = as.integer(pi_matrix_ >= c)
+    acc_good = mean(yhat[df_test_sc$X58 == 0] == 0)
+    acc = mean(yhat == df_test_sc$X58);
+    c(acc, acc_good, c)
+  }) %>%
+    do.call("rbind", .) %>%
+    data.frame() %>%
+    `colnames<-`(c("acc", "acc_good", "cutoff")) -> cutoff_df
+  cutoff_df %>%
+    filter(acc_good >= .99) %>% 
+    arrange(acc) %>%
+    tail(1) %>%
+    mutate(i = i)
+  
+}) %>% do.call("rbind", .) -> tune_full
+
