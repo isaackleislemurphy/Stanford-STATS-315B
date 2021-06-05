@@ -168,7 +168,7 @@ We can very clearly see the effect of the noisier gradient with a batch size of 
 
 \vspace{0.1in}
 
-c) Now we change the value of $\sigma$ to $1$ to make the a lot more noisy: 
+c) Now we change the value of $\sigma$ to $1$ to make the data a lot more noisy: 
 
 ```{r generating_data_2}
 
