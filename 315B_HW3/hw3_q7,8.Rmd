@@ -314,4 +314,4 @@ print(paste0("The standardized variables model MSE is ",
 #model_standardized_mse/model_mse-1
 ```
 
-And so we see that with the standardized data, since the noise variable was up-scaled quite a bit, the MSE obtained from the model trained on the standardized data is 98.151% higher than the MSE obtained from the model trained on non-standardized data. This is manifestation of the idea that standardizing all variables to have the same variance is not always a good idea. 
+And so we see that with the standardized data, since the noise variable was up-scaled quite a bit, the MSE obtained from the model trained on the standardized data is 98.151% higher than the MSE obtained from the model trained on non-standardized data. This is manifestation of the idea that standardizing all variables to have the same variance is not always a good idea. While practically speaking, we will never actually know if a variable in the data-set is purely low variance noise, this example illustrates that we run the risk of up-scaling noise variables through standardization, and the approach used works to manifest this idea as discussed and confirmed in office hours.
